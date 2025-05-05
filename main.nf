@@ -1,0 +1,109 @@
+#!/usr/bin/env nextflow
+
+/*
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    PARAMETER VALUES
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+*/
+params.input = null
+params.output = "results"
+params.id = "nuclear"
+
+// Cell Ranger Resegment
+params.expansion_distance = 5
+params.boundary_stain= "disable"
+params.interior_stain= "disable"
+params.dapi_filter = 100
+
+// Resource Mgmt
+params.rangersegCPUs = 32
+params.rangersegMem = 128
+
+
+// Validate that the input parameter is specified
+if (!params.input) {
+    error "The --input parameter is required but was not specified. Please provide a valid input path."
+}
+
+
+/*
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    RESEGMENT 10X
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+*/
+
+process RESEGMENT_10X {
+    publishDir params.output, mode: "symlink"
+    cpus params.rangersegCPUs
+    memory "${params.rangersegMem} GB"
+    debug true
+
+    input:
+    path xen_dat     //Xenium output data path
+
+    output:
+    path "${params.id}_resegmented"
+
+    script:
+    """
+    xeniumranger resegment \\
+      --id="${params.id}_resegmented" \\
+      --xenium-bundle=${xen_dat} \\
+      --boundary-stain=${params.boundary_stain} \\
+      --interior-stain=${params.interior_stain} \\
+      --localcores=${params.rangersegCPUs} \\
+      --localmem=${params.rangersegMem} \\
+      2>&1 | tee ranger_out.log
+    """
+
+
+}
+
+/*
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    FILTER_TRANSCRIPTS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+*/
+
+process FILTER_TRANSCRIPTS {
+    //publishDir params.output, mode: "symlink"
+    cpus params.rangersegCPUs
+    memory "${params.rangersegMem} GB"
+    debug true
+
+    input:
+    path "${params.id}_resegmented"
+
+    output:
+    path "${params.id}_resegmented"
+
+    script:
+    """
+
+    """
+
+
+}
+
+/*
+
+/*
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    SEGMENT WORKFLOW
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+*/
+
+
+workflow SEGMENT {
+
+    input_channel = Channel.fromPath(params.input)
+
+    // Run the RESEGMENT_10X process
+    resegmented_output = RESEGMENT_10X(input_channel)
+
+    resegmented_output.view()
+}
+
+workflow {
+    SEGMENT()
+}
