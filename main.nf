@@ -67,19 +67,16 @@ process RESEGMENT_10X {
 
 process FILTER_TRANSCRIPTS {
     //publishDir params.output, mode: "symlink"
-    cpus params.rangersegCPUs
-    memory "${params.rangersegMem} GB"
-    debug true
 
     input:
-    path "${params.id}_resegmented"
+    path resegmented_dir
 
     output:
-    path "${params.id}_resegmented"
+    path 
 
     script:
     """
-
+    filter_transcripts_parquet_v3.py -transcript "${resegmented_dir}/transcripts.parquet"
     """
 
 
@@ -94,16 +91,14 @@ process FILTER_TRANSCRIPTS {
 */
 
 
-workflow SEGMENT {
+workflow {
 
     input_channel = Channel.fromPath(params.input)
 
     // Run the RESEGMENT_10X process
     resegmented_output = RESEGMENT_10X(input_channel)
 
-    resegmented_output.view()
-}
-
-workflow {
-    SEGMENT()
+    // Process transcripts file for Baysor
+    filtered_transcripts = FILTER_TRANSCRIPTS(resegmented_output)
+    
 }
