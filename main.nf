@@ -80,13 +80,13 @@ process RESEGMENT_10X {
 */
 
 process FILTER_TRANSCRIPTS {
-    publishDir params.output, mode: "symlink"
+    publishDir params.outputdir, mode: "symlink"
 
     input:
     path resegmented_dir
 
     output:
-    path transcripts_csv
+    path 'X0.0-24000.0_Y0.0-24000.0_filtered_transcripts.csv'
 
    script:
     """

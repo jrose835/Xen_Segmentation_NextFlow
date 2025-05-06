@@ -11,7 +11,7 @@ def main():
     # Parse input arguments.
     args = parse_args()
 
-    data_frame = pd.read_parquet(args.transcript)
+    data_frame = pd.read_parquet(args.transcript, engine='fastparquet')
 
     # Filter transcripts. Ignore negative controls
     filtered_frame = data_frame[(data_frame["qv"] >= args.min_qv) &
