@@ -79,22 +79,20 @@ process RESEGMENT_10X {
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
-//process FILTER_TRANSCRIPTS {
-    //publishDir params.output, mode: "symlink"
+process FILTER_TRANSCRIPTS {
+    publishDir params.output, mode: "symlink"
 
-//    input:
-//    path resegmented_dir
+    input:
+    path resegmented_dir
 
-//    output:
-//    path 
+    output:
+    path transcripts_csv
 
-//   script:
-//    """
-//    filter_transcripts_parquet_v3.py -transcript "${resegmented_dir}/transcripts.parquet"
-//    """
-
-
-// }
+   script:
+    """
+    filter_transcripts_parquet_v3.py -transcript "${resegmented_dir}/outs/transcripts.parquet"
+    """
+ }
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -127,8 +125,9 @@ workflow {
 
     // Run the RESEGMENT_10X process
     resegmented_output = RESEGMENT_10X(input_channel)
-    resegmented_output.view()
+    // resegmented_output.view()
     // Process transcripts file for Baysor
-    // filtered_transcripts = FILTER_TRANSCRIPTS(resegmented_output)
+    filtered_transcripts = FILTER_TRANSCRIPTS(resegmented_output)
+    filtered_transcripts.view()
 
 }
