@@ -6,13 +6,13 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 params.input = null
-params.output = "results"
+params.outputdir = "results"
 params.id = "nuclear"
 
 // Cell Ranger Resegment
 params.expansion_distance = 5
-params.boundary_stain= "disable"
-params.interior_stain= "disable"
+params.boundary_stain= "disable" // Possible options are: "ATP1A1/CD45/E-Cadherin" (default) or "disable".
+params.interior_stain= "disable" // Possible options are: "18S" (default) or "disable".
 params.dapi_filter = 100
 
 // Resource Mgmt
@@ -36,7 +36,7 @@ if (!params.input) {
 // Need to Add expansion distance parameter here
 
 process RESEGMENT_10X {
-    publishDir params.output, mode: "symlink"
+    publishDir params.outputdir, mode: "symlink"
     cpus params.rangersegCPUs
     memory "${params.rangersegMem} GB"
     debug true
@@ -52,6 +52,7 @@ process RESEGMENT_10X {
     xeniumranger resegment \\
       --id="${params.id}_resegmented" \\
       --xenium-bundle=${xen_dat} \\
+      --expansion-distance=$params.expansion_distance \\
       --boundary-stain=${params.boundary_stain} \\
       --interior-stain=${params.interior_stain} \\
       --localcores=${params.rangersegCPUs} \\
@@ -78,22 +79,22 @@ process RESEGMENT_10X {
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
-process FILTER_TRANSCRIPTS {
+//process FILTER_TRANSCRIPTS {
     //publishDir params.output, mode: "symlink"
 
-    input:
-    path resegmented_dir
+//    input:
+//    path resegmented_dir
 
-    output:
-    path 
+//    output:
+//    path 
 
-    script:
-    """
-    filter_transcripts_parquet_v3.py -transcript "${resegmented_dir}/transcripts.parquet"
-    """
+//   script:
+//    """
+//    filter_transcripts_parquet_v3.py -transcript "${resegmented_dir}/transcripts.parquet"
+//    """
 
 
-}
+// }
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -126,8 +127,8 @@ workflow {
 
     // Run the RESEGMENT_10X process
     resegmented_output = RESEGMENT_10X(input_channel)
-
+    resegmented_output.view()
     // Process transcripts file for Baysor
-    filtered_transcripts = FILTER_TRANSCRIPTS(resegmented_output)
+    // filtered_transcripts = FILTER_TRANSCRIPTS(resegmented_output)
 
 }
