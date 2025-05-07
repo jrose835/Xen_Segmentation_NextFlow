@@ -9,20 +9,25 @@ params.input = null
 params.outputdir = "results"
 params.id = "nuclear"
 
-// Cell Ranger Resegment
+// RESEGMENT_10X
 params.expansion_distance = 5
 params.boundary_stain= "disable" // Possible options are: "ATP1A1/CD45/E-Cadherin" (default) or "disable".
 params.interior_stain= "disable" // Possible options are: "18S" (default) or "disable".
 params.dapi_filter = 100
 
 // CALC SPLITS 
-params.csplit_x_bins = 10 // number of slices along the x axis (default: 10)
-params.csplit_y_bins = 10 // number of slices along the y axis (default: 10)
+params.csplit_x_bins = 2 // number of slices along the x axis
+params.csplit_y_bins = 2 // number of slices along the y axis
+
+// BAYSOR
+params.baysor_m = 1 // Minimal number of molecules for a cell to be considered as real
+params.baysor_prior = 0.8 // Confidence of the prior_segmentation results. Value in [0; 1]
+params.baysor_min_trans = 100 // Minimum number of transcripts in a baysor chunk to perform segmentation on
 
 // Resource Mgmt
 params.rangersegCPUs = 32
 params.rangersegMem = 128
-
+params.baysorCPUs = 8
 
 // Validate that the input parameter is specified
 if (!params.input) {
@@ -107,7 +112,7 @@ process FILTER_TRANSCRIPTS {
     tuple val(tile_id), val(x_min), val(x_max), val(y_min), val(y_max) // Tuple from splits.csv
 
     output:
-    path "X${x_min}-${x_max}_Y${y_min}-${y_max}_filtered_transcripts.csv"
+    path "*_filtered_transcripts.csv"
 
    script:
     """
@@ -123,7 +128,33 @@ process FILTER_TRANSCRIPTS {
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
+process BAYSOR {
+    cpus params.baysorCPUs
 
+    input:
+    path transcripts_csv
+
+    output:
+    tuple path("segmentation.csv"), path("segmentation_polygons_2d.json")
+
+    script:
+    """
+    export JULIA_NUM_THREADS=$params.baysorCPUs
+
+    # Count the number of rows in the CSV file (excluding the header)
+    row_count=\$(tail -n +2 ${transcripts_csv} | wc -l)
+
+    # Check if the transcript count is at least at specified minium
+    if [ "\$row_count" -ge $params.baysor_min_trans ]; then
+        echo "File ${transcripts_csv} has \$row_count rows. Running Baysor..."
+        baysor run -x x_location -y y_location -z z_location -g feature_name -m $params.baysor_m -p --prior-segmentation-confidence $params.baysor_prior ${transcripts_csv} :cell_id
+    else
+        echo "File ${transcripts_csv} has fewer than ${params.baysor_min_trans} rows (\$row_count). Skipping Baysor run."
+        echo "transcript_id,cell_id,overlaps_nucleus,gene,x,y,z,qv,fov_name,nucleus_distance,codeword_index,codeword_category,is_gene,molecule_id,prior_segmentation,confidence,cluster,cell,assignment_confidence,is_noise,ncv_color" > segmentation.csv
+        touch segmentation_polygons_2d.json
+    fi
+    """
+}
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -161,11 +192,12 @@ workflow {
     // Calculate splits
     splits_csv = CALC_SPLITS(resegmented_output)
 
+    //Set resegmenated path as value channel
     Channel
         resegmented_output.first()
         .set {reseg_ref}
 
-    // Read splits.csv into channel
+    // Set splits.csv into queue channel
     Channel
         splits_csv.splitCsv(header: true)
         .flatten()
@@ -174,5 +206,9 @@ workflow {
     // Process and split transcripts file for Baysor
     filtered_transcripts = FILTER_TRANSCRIPTS(reseg_ref, splits_channel)
     // filtered_transcripts.view()
+
+    //Baysor
+    segments = BAYSOR(filtered_transcripts)
+    segments.view()
 
 }

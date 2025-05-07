@@ -27,11 +27,11 @@ def main():
 
     # Change cell_id of cell-free transcripts from -1 to 0
     neg_cell_row = filtered_frame["cell_id"] == -1
-    filtered_frame.loc[neg_cell_row,"cell_id"] = 0
+    filtered_frame.loc[neg_cell_row,"cell_id"] = "0"
 
     # Change cell_id of cell-free transcripts from "UNASSIGNED" to 0
     UN_cell_row = filtered_frame["cell_id"] == "UNASSIGNED"
-    filtered_frame.loc[UN_cell_row,"cell_id"] = 0
+    filtered_frame.loc[UN_cell_row,"cell_id"] = "0"
 
     # Output filtered transcripts to CSV
     filtered_frame.to_csv('_'.join(["X"+str(args.min_x)+"-"+str(args.max_x), "Y"+str(args.min_y)+"-"+str(args.max_y), "filtered_transcripts.csv"]),
