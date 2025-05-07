@@ -33,13 +33,13 @@ if (!params.input) {
 */
 
 
-// Need to Add expansion distance parameter here
+// Process for re-segmenting using Xenium algorithm...typically nuclear-only
 
 process RESEGMENT_10X {
     publishDir params.outputdir, mode: "symlink"
     cpus params.rangersegCPUs
     memory "${params.rangersegMem} GB"
-    debug true
+    //debug true
 
     input:
     path xen_dat     //Xenium output data path
@@ -65,12 +65,26 @@ process RESEGMENT_10X {
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    CHUNKIFY
+    CALC_SPLITS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
+// Produces coordinates of quantile-based tiles to split transcripts file into for parallel baysor runs
 
+process CALC_SPLITS {
 
+    input:
+    path resegmented_dir 
+
+    output:
+    path "splits.csv"
+
+    script:
+    """
+    split_transcripts.py "${resegmented_dir}/outs/transcripts.parquet" "splits.csv"
+    """
+
+}
 
 
 /*
@@ -79,18 +93,23 @@ process RESEGMENT_10X {
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
+// Prepares transcripts for baysor (and does actual splitting)
+
 process FILTER_TRANSCRIPTS {
     publishDir params.outputdir, mode: "symlink"
 
     input:
     path resegmented_dir
+    tuple val(tile_id), val(x_min), val(x_max), val(y_min), val(y_max) // Tuple from splits.csv
 
     output:
-    path 'X0.0-24000.0_Y0.0-24000.0_filtered_transcripts.csv'
+    path "X${x_min}-${x_max}_Y${y_min}-${y_max}_filtered_transcripts.csv"
 
    script:
     """
-    filter_transcripts_parquet_v3.py -transcript "${resegmented_dir}/outs/transcripts.parquet"
+    filter_transcripts_parquet_v3.py -transcript "${resegmented_dir}/outs/transcripts.parquet" \\
+      -min_x ${x_min} -max_x ${x_max} \\
+      -min_y ${y_min} -max_y ${y_max}
     """
  }
 
@@ -126,8 +145,29 @@ workflow {
     // Run the RESEGMENT_10X process
     resegmented_output = RESEGMENT_10X(input_channel)
     // resegmented_output.view()
-    // Process transcripts file for Baysor
-    filtered_transcripts = FILTER_TRANSCRIPTS(resegmented_output)
-    filtered_transcripts.view()
+
+    // Calculate splits
+    splits_csv = CALC_SPLITS(resegmented_output)
+
+    Channel
+        resegmented_output.first()
+        .set {reseg_ref}
+
+    // Read splits.csv into channel
+    Channel
+        splits_csv.splitCsv(header: true)
+        // .view {row -> "${row.tile_id}, ${row.x_min}, ${row.x_max}, ${row.y_min}, ${row.y_max}"}
+        .flatten()
+        .set{ splits_channel }
+
+    //splits_channel = splits_csv.flatMap { file ->
+    //    file.splitCsv(header: true).collect { row -> tuple(row.tile_id, row.x_min as float, row.x_max as float, row.y_min as float, row.y_max as float)
+    //    }
+    //}
+    //splits_channel.view()
+
+    // Process and split transcripts file for Baysor
+    filtered_transcripts = FILTER_TRANSCRIPTS(reseg_ref, splits_channel)
+    // filtered_transcripts.view()
 
 }
