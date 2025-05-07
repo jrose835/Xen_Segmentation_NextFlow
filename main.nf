@@ -15,6 +15,10 @@ params.boundary_stain= "disable" // Possible options are: "ATP1A1/CD45/E-Cadheri
 params.interior_stain= "disable" // Possible options are: "18S" (default) or "disable".
 params.dapi_filter = 100
 
+// CALC SPLITS 
+params.csplit_x_bins = 10 // number of slices along the x axis (default: 10)
+params.csplit_y_bins = 10 // number of slices along the y axis (default: 10)
+
 // Resource Mgmt
 params.rangersegCPUs = 32
 params.rangersegMem = 128
@@ -81,7 +85,7 @@ process CALC_SPLITS {
 
     script:
     """
-    split_transcripts.py "${resegmented_dir}/outs/transcripts.parquet" "splits.csv"
+    split_transcripts.py "${resegmented_dir}/outs/transcripts.parquet" "splits.csv" --x_bins ${params.csplit_x_bins} --y_bins ${params.csplit_y_bins} 
     """
 
 }
@@ -116,6 +120,14 @@ process FILTER_TRANSCRIPTS {
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     BAYSOR
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+*/
+
+
+
+/*
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    RECONSTRUCT_SEGMENTATION
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
@@ -156,15 +168,8 @@ workflow {
     // Read splits.csv into channel
     Channel
         splits_csv.splitCsv(header: true)
-        // .view {row -> "${row.tile_id}, ${row.x_min}, ${row.x_max}, ${row.y_min}, ${row.y_max}"}
         .flatten()
         .set{ splits_channel }
-
-    //splits_channel = splits_csv.flatMap { file ->
-    //    file.splitCsv(header: true).collect { row -> tuple(row.tile_id, row.x_min as float, row.x_max as float, row.y_min as float, row.y_max as float)
-    //    }
-    //}
-    //splits_channel.view()
 
     // Process and split transcripts file for Baysor
     filtered_transcripts = FILTER_TRANSCRIPTS(reseg_ref, splits_channel)
