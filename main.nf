@@ -16,7 +16,7 @@ params.interior_stain= "disable" // Possible options are: "18S" (default) or "di
 params.dapi_filter = 100
 
 // CALC SPLITS 
-params.csplit_x_bins = 2 // number of slices along the x axis
+params.csplit_x_bins = 2 // number of slices along the x axis (total number of bins is product of x_bins * y_bins)
 params.csplit_y_bins = 2 // number of slices along the y axis
 
 // BAYSOR
@@ -147,7 +147,9 @@ process BAYSOR {
     # Check if the transcript count is at least at specified minium
     if [ "\$row_count" -ge $params.baysor_min_trans ]; then
         echo "File ${transcripts_csv} has \$row_count rows. Running Baysor..."
-        baysor run -x x_location -y y_location -z z_location -g feature_name -m $params.baysor_m -p --prior-segmentation-confidence $params.baysor_prior ${transcripts_csv} :cell_id
+        baysor run -x x_location -y y_location -z z_location -g feature_name \\
+        -m $params.baysor_m -p --prior-segmentation-confidence $params.baysor_prior --polygon-format "GeometryCollectionLegacy" \\
+        ${transcripts_csv} :cell_id
     else
         echo "File ${transcripts_csv} has fewer than ${params.baysor_min_trans} rows (\$row_count). Skipping Baysor run."
         echo "transcript_id,cell_id,overlaps_nucleus,gene,x,y,z,qv,fov_name,nucleus_distance,codeword_index,codeword_category,is_gene,molecule_id,prior_segmentation,confidence,cluster,cell,assignment_confidence,is_noise,ncv_color" > segmentation.csv
@@ -161,10 +163,32 @@ process BAYSOR {
     RECONSTRUCT_SEGMENTATION
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
+process RECONSTRUCT_SEGMENTATION {
 
+    input:
+    val files_list
 
+    output:
+    tuple path("merged.csv"), path("merged.json")
 
+    script:
+    def csv_files = files_list.withIndex().findAll { it[1] % 2 == 0 }.collect { it[0] }
+    def json_files = files_list.withIndex().findAll { it[1] % 2 != 0 }.collect { it[0] }
 
+    """
+    # Merge CSV files (odd-indexed: 1,3,5,...)
+    head -n 1 ${csv_files[0]} > merged.csv
+    for csv in ${csv_files.join(' ')}; do
+        tail -n +2 \$csv >> merged.csv
+    done
+
+    # Merge JSON files (even-indexed: 2,4,6,...)
+    : > merged.json
+    for json in ${json_files.join(' ')}; do
+        cat \$json >> merged.json
+    done
+    """
+}
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     IMPORT_SEGMENTATION
@@ -207,8 +231,10 @@ workflow {
     filtered_transcripts = FILTER_TRANSCRIPTS(reseg_ref, splits_channel)
     // filtered_transcripts.view()
 
-    //Baysor
+    //Baysor run in chunked parallel
     segments = BAYSOR(filtered_transcripts)
-    segments.view()
-
+    
+    // Reconstruct segmentation files
+    complete_segmentation = RECONSTRUCT_SEGMENTATION(segments.collect())
+    complete_segmentation.view()
 }
