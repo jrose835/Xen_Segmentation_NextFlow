@@ -28,6 +28,8 @@ params.baysor_min_trans = 100 // Minimum number of transcripts in a baysor chunk
 params.rangersegCPUs = 32
 params.rangersegMem = 128
 params.baysorCPUs = 8
+params.rangerimportCPUs = 32
+params.rangerimportMem = 128
 
 // Validate that the input parameter is specified
 if (!params.input) {
@@ -95,7 +97,6 @@ process CALC_SPLITS {
 
 }
 
-
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     FILTER_TRANSCRIPTS
@@ -105,8 +106,7 @@ process CALC_SPLITS {
 // Prepares transcripts for baysor (and does actual splitting)
 
 process FILTER_TRANSCRIPTS {
-    publishDir params.outputdir, mode: "symlink"
-
+    
     input:
     path resegmented_dir
     tuple val(tile_id), val(x_min), val(x_max), val(y_min), val(y_max) // Tuple from splits.csv
@@ -183,10 +183,30 @@ process RECONSTRUCT_SEGMENTATION {
     done
 
     # Merge JSON files (even-indexed: 2,4,6,...)
-    : > merged.json
-    for json in ${json_files.join(' ')}; do
-        cat \$json >> merged.json
+    # Start the wrapper
+    echo '{"geometries": [' > merged.json
+
+    # put all the JSON filenames into a bash array
+    files=( ${json_files.join(' ')} )
+    count=\${#files[@]}
+
+    for i in \"\${!files[@]}\"; do
+      file=\${files[i]}
+
+      # strip off the outer wrapper, leaving just the inner array items
+      sed -E '
+        s#^\\{"geometries":\\[##; 
+        s#\\],\"type\" *: *\"GeometryCollection\"\\} *\$##;
+      ' \"\$file\" >> merged.json
+
+      # add a comma between items (but not after the last one)
+      if [ \$i -lt \$((count - 1)) ]; then
+        echo ',' >> merged.json
+      fi
     done
+
+    # close out the wrapper
+    echo '],"type": "GeometryCollection"}' >> merged.json
     """
 }
 /*
@@ -195,7 +215,29 @@ process RECONSTRUCT_SEGMENTATION {
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
+process IMPORT_SEGMENTATION {
+    publishDir params.outputdir, mode: "symlink"
+    cpus params.rangerimportCPUs
+    memory "${params.rangerimportMem} GB"
 
+    input:
+    path reseg_ref
+    tuple path(segmentation), path(polygons)
+
+    output:
+    path "${params.id}_baysor"
+
+    script:
+    """
+    xeniumranger import-segmentation --id="${params.id}_baysor" \
+                                 --xenium-bundle=${reseg_ref}/outs \
+                                 --transcript-assignment=${segmentation} \
+                                 --viz-polygons=${polygons} \
+                                 --units=microns \
+                                 --localcores=${params.rangerimportCPUs} \
+                                 --localmem=${params.rangerimportMem}
+    """
+}
 
 
 /*
@@ -236,5 +278,8 @@ workflow {
     
     // Reconstruct segmentation files
     complete_segmentation = RECONSTRUCT_SEGMENTATION(segments.collect())
-    complete_segmentation.view()
+    //complete_segmentation.view()
+
+    baysor_output = IMPORT_SEGMENTATION(reseg_ref, complete_segmentation)
+    baysor_output.view()
 }
