@@ -56,12 +56,12 @@ process RESEGMENT_10X {
     path xen_dat     //Xenium output data path
 
     output:
-    path "${params.id}_resegmented"
+    path "${params.id}_nucsegmented"
 
     script:
     """
     xeniumranger resegment \\
-      --id="${params.id}_resegmented" \\
+      --id="${params.id}_nucsegmented" \\
       --xenium-bundle=${xen_dat} \\
       --expansion-distance=$params.expansion_distance \\
       --boundary-stain=${params.boundary_stain} \\
