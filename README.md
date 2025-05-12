@@ -9,7 +9,7 @@ This workflow allows for re-segmenting 10x Xenium data via:
 - Baysor (https://github.com/kharchenkolab/Baysor)
  
 ## Workflow DAG
-!(https://github.com/jrose835/Xen_Segmentation_NextFlow/blob/master/assets/dag.png)
+![dag](assets/dag.png)
 
 > [!NOTE]
 > This is **NOT** intended to be a modular/nf-core-templated workflow. Just a custom Nextflow built for specific needs
