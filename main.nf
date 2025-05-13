@@ -28,6 +28,7 @@ params.baysor_min_trans = 100 // Minimum number of transcripts in a baysor chunk
 params.rangersegCPUs = 32
 params.rangersegMem = 128
 params.baysorCPUs = 8
+params.baysorMem = 100
 params.rangerimportCPUs = 32
 params.rangerimportMem = 128
 
@@ -130,6 +131,7 @@ process FILTER_TRANSCRIPTS {
 
 process BAYSOR {
     cpus params.baysorCPUs
+    memory "${params.baysorMem} GB"
 
     input:
     path transcripts_csv
