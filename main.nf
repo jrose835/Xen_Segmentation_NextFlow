@@ -5,40 +5,16 @@
     PARAMETER VALUES
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
-params.input = null
-params.outputdir = "results"
-params.id = "nuclear"
-
-// RESEGMENT_10X
-params.expansion_distance = 5
-params.boundary_stain= "disable" // Possible options are: "ATP1A1/CD45/E-Cadherin" (default) or "disable".
-params.interior_stain= "disable" // Possible options are: "18S" (default) or "disable".
-params.dapi_filter = 100
-
-// CALC SPLITS 
-params.csplit_x_bins = 2 // number of slices along the x axis (total number of bins is product of x_bins * y_bins)
-params.csplit_y_bins = 2 // number of slices along the y axis
-
-// BAYSOR
-params.baysor_m = 1 // Minimal number of molecules for a cell to be considered as real
-params.baysor_prior = 0.8 // Confidence of the prior_segmentation results. Value in [0; 1]
-params.baysor_min_trans = 100 // Minimum number of transcripts in a baysor chunk to perform segmentation on
-
-// Resource Mgmt
-params.rangersegCPUs = 32
-params.rangersegMem = 128
-params.filterCPUs = 10
-params.filterMem = 100
-params.baysorCPUs = 8
-params.baysorMem = 100
-params.rangerimportCPUs = 32
-params.rangerimportMem = 128
 
 // Validate that the input parameter is specified
+
 if (!params.input) {
     error "The --input parameter is required but was not specified. Please provide a valid input path."
 }
 
+if (!params.runRanger & params.runBaysor) {
+    error "No method set. Please set either runRanger or runBaysor to true."
+}
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -257,35 +233,38 @@ workflow {
 
     input_channel = Channel.fromPath(params.input)
 
-    // Run the RESEGMENT_10X process
-    resegmented_output = RESEGMENT_10X(input_channel)
-    // resegmented_output.view()
+    if ( params.runRanger ) {
+        // Run the RESEGMENT_10X process
+        resegmented_output = RESEGMENT_10X(input_channel)
+    } else {
+        resegmented_output = input_channel
+    }
 
-    // Calculate splits
-    splits_csv = CALC_SPLITS(resegmented_output)
+    if ( params.runBaysor ) {
+        // Calculate splits for tiling transcript file
+        splits_csv = CALC_SPLITS(resegmented_output)
 
-    //Set resegmenated path as value channel
-    Channel
-        resegmented_output.first()
-        .set {reseg_ref}
+        //Set resegmenated path as value channel
+        Channel
+            resegmented_output.first()
+            .set {reseg_ref}
 
-    // Set splits.csv into queue channel
-    Channel
-        splits_csv.splitCsv(header: true)
-        .flatten()
-        .set{ splits_channel }
+        // Set splits.csv into queue channel
+        Channel
+            splits_csv.splitCsv(header: true)
+            .flatten()
+            .set{ splits_channel }
 
-    // Process and split transcripts file for Baysor
-    filtered_transcripts = FILTER_TRANSCRIPTS(reseg_ref, splits_channel)
-    // filtered_transcripts.view()
+        // Process and split transcripts file for Baysor
+        filtered_transcripts = FILTER_TRANSCRIPTS(reseg_ref, splits_channel)
 
-    //Baysor run in chunked parallel
-    segments = BAYSOR(filtered_transcripts)
+        //Baysor run in chunked parallel
+        segments = BAYSOR(filtered_transcripts)
+        
+        // Reconstruct segmentation files
+        complete_segmentation = RECONSTRUCT_SEGMENTATION(segments.collect())
+
+        baysor_output = IMPORT_SEGMENTATION(reseg_ref, complete_segmentation)
+    }
     
-    // Reconstruct segmentation files
-    complete_segmentation = RECONSTRUCT_SEGMENTATION(segments.collect())
-    //complete_segmentation.view()
-
-    baysor_output = IMPORT_SEGMENTATION(reseg_ref, complete_segmentation)
-    baysor_output.view()
 }
