@@ -27,6 +27,8 @@ params.baysor_min_trans = 100 // Minimum number of transcripts in a baysor chunk
 // Resource Mgmt
 params.rangersegCPUs = 32
 params.rangersegMem = 128
+params.filterCPUs = 10
+params.filterMem = 100
 params.baysorCPUs = 8
 params.baysorMem = 100
 params.rangerimportCPUs = 32
@@ -107,6 +109,8 @@ process CALC_SPLITS {
 // Prepares transcripts for baysor (and does actual splitting)
 
 process FILTER_TRANSCRIPTS {
+    cpus params.filterCPUs
+    memory "${params.filterMem} GB"
     
     input:
     path resegmented_dir
