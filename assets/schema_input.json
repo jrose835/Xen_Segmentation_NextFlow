@@ -1,0 +1,29 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://raw.githubusercontent.com/nf-core/spatialxe/master/assets/schema_input.json",
+    "title": "nf-core/spatialxe pipeline - params.input schema",
+    "description": "Schema for the file provided with params.input",
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "sample": {
+                "type": "string",
+                "pattern": "^\\S+$",
+                "errorMessage": "Sample name must be provided and cannot contain spaces",
+                "meta": ["id"]
+            },
+            "bundle": {
+                "type": "string",
+                "pattern": "^\\S+$",
+                "errorMessage": "Please provide a bundle as input data"
+            },
+            "image": {
+                "type": "string",
+                "pattern": "^\\S+$",
+                "errorMessage": "You can provide an image. If you do not then please leave the field empty."
+            }
+        },
+        "required": ["sample", "bundle"]
+    }
+}
