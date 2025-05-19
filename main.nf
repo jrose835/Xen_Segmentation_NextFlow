@@ -2,22 +2,6 @@
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    VALIDATE PARAMETER VALUES
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-*/
-
-// Validate that the input parameter is specified
-
-if (!params.input) {
-    error "The --input parameter is required but was not specified. Please provide a valid input path."
-}
-
-if (!params.runRanger & params.runBaysor) {
-    error "No method set. Please set either runRanger or runBaysor to true."
-}
-
-/*
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     IMPORT FUNCTIONS & MODULES
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
@@ -44,29 +28,44 @@ include { RECONSTRUCT_SEGMENTATION } from 'modules/BAYSOR/RECONSTRUCT_SEGMENTATI
 workflow BAYSOR_PARALLEL {
 
     take:
-    ch_bundle_path      // channel: [ val(meta), ["xenium-bundle"] ]
-    splits_channel      // channel: [ val(tile_id), val(x_min), val(x_max), val(y_min), val(y_max) ]
+    ch_bundle_path          // channel: [ val(meta), ["xenium-bundle"] ]
+    ch_splits_csv          // channel: [ val(meta), ["splits.csv"]]
 
     main:
 
-        ch_bundle_path
+        // Set bundle channel into value
+        Channel
+            ch_bundle_path.first()
+            .set {reseg_ref} // channel: [val(meta), ["xenium-bundle"] ]
+
+        // Set splits.csv into queue channel
+        Channel
+            ch_splits_csv.map{ _meta, splits -> return[ splits ] }
+            .splitCsv(header: true)
+            .flatten()
+            .set{ ch_splits } // channel: [ val(tile_id), val(x_min), val(x_max), val(y_min), val(y_max) ]
+
 
         // Process and split transcripts file for Baysor
-        filtered_transcripts = FILTER_TRANSCRIPTS(ch_bundle_path, splits_channel)
+        filtered_transcripts = FILTER_TRANSCRIPTS(reseg_ref, ch_splits)
 
         //Baysor run in chunked parallel
-        segments = BAYSOR_RUN(filtered_transcripts)
-        
+        BAYSOR_RUN(filtered_transcripts)
+
+        // Prepare inputs for reconstruction
+        grouped_csvs = BAYSOR_RUN.out.csv.groupTuple(by: 0).map { meta, vals -> tuple(meta, vals.collect{ it[1] }) }
+        grouped_jsons = BAYSOR_RUN.out.json.groupTuple(by: 0).map { meta, vals -> tuple(meta, vals.collect{ it[1] }) }
+        merged_inputs = grouped_csvs.join(grouped_jsons, by: 0)
+
         // Reconstruct segmentation files
-        complete_segmentation = RECONSTRUCT_SEGMENTATION(segments.collect())
+        RECONSTRUCT_SEGMENTATION(merged_inputs)
+
 
     emit:
-    segmentation = complete_segmentation
+    segmentation = RECONSTRUCT_SEGMENTATION.out.complete_segmentation
 
 
 }
-
-
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -81,6 +80,18 @@ workflow {
         INPUTS
     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     */
+
+    // Validate that the input parameter is specified
+
+    if (!params.input) {
+        error "The --input parameter is required but was not specified. Please provide a valid input path."
+    }
+
+    if (!params.runRanger & params.runBaysor) {
+        error "No method set. Please set either runRanger or runBaysor to true."
+    }
+
+    // Set channels
     //TODO: Make sure this isn't broken if file has additional metadata columns
     Channel
         .fromList(samplesheetToList(params.input, "${projectDir}/assets/schema_input.json"))
@@ -102,7 +113,7 @@ workflow {
 
     /*
     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        Main Workflow
+        Workflow
     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     */
 
@@ -117,22 +128,9 @@ workflow {
         // Calculate splits for tiling transcript file
         splits_csv = CALC_SPLITS(resegmented_output)
 
-        //Set resegmenated path as value channel
-        //Channel
-        //    resegmented_output.first()
-        //    .set {reseg_ref}
+        complete_segmentation = BAYSOR_PARALLEL(resegmented_output, splits_csv) 
 
-    //TODO Find a way to convert resegmented_output channel into value channel...FOR EACH ID in meta
-
-        // Set splits.csv into queue channel
-        Channel
-            splits_csv.splitCsv(header: true)
-            .flatten()
-            .set{ splits_channel }
-
-        complete_segmentation = BAYSOR_PARALLEL(resegmented_output, splits_channel) 
-
-        baysor_output = IMPORT_SEGMENTATION(reseg_ref, complete_segmentation) //TODO fix input channel for reseg_ref
+        baysor_output = IMPORT_SEGMENTATION(resegmented_output, complete_segmentation) //TODO fix input channels
     }
     
 }

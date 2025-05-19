@@ -8,48 +8,38 @@
 // TODO
 // Change inputs for meta map
 process RECONSTRUCT_SEGMENTATION {
+  tag "$meta.id"
 
-    input:
-    val files_list
+  input:
+   tuple val(meta), path(csv_files), path(json_files)
 
-    output:
-    tuple path("merged.csv"), path("merged.json")
+  output:
+   tuple path("merged.csv"), path("merged.json"), emit: complete_segmentation 
 
-    script:
-    def csv_files = files_list.withIndex().findAll { it[1] % 2 == 0 }.collect { it[0] }
-    def json_files = files_list.withIndex().findAll { it[1] % 2 != 0 }.collect { it[0] }
+  script:
+  """
+  csv_files=( ${csv_files.join(' ')} )
+  json_files=( ${json_files.join(' ')} )
 
-    """
-    # Merge CSV files (odd-indexed: 1,3,5,...)
-    head -n 1 ${csv_files[0]} > merged.csv
-    for csv in ${csv_files.join(' ')}; do
-        tail -n +2 \$csv >> merged.csv
-    done
+  # Merge CSV files (keep only the first header)
+  head -n 1 \${csv_files[0]} > merged.csv
+  for csv in "\${csv_files[@]}"; do
+      tail -n +2 "\$csv" >> merged.csv
+  done
 
-    # Merge JSON files (even-indexed: 2,4,6,...)
-    # Start the wrapper
-    echo '{"geometries": [' > merged.json
-
-    # put all the JSON filenames into a bash array
-    files=( ${json_files.join(' ')} )
-    count=\${#files[@]}
-
-    for i in \"\${!files[@]}\"; do
-      file=\${files[i]}
-
-      # strip off the outer wrapper, leaving just the inner array items
-      sed -E '
-        s#^\\{"geometries":\\[##; 
-        s#\\],\"type\" *: *\"GeometryCollection\"\\} *\$##;
-      ' \"\$file\" >> merged.json
-
-      # add a comma between items (but not after the last one)
-      if [ \$i -lt \$((count - 1)) ]; then
-        echo ',' >> merged.json
-      fi
-    done
-
-    # close out the wrapper
-    echo '],"type": "GeometryCollection"}' >> merged.json
-    """
+  # Merge JSON files into a single GeometryCollection
+  echo '{"geometries": [' > merged.json
+  count=\${#json_files[@]}
+  for i in "\${!json_files[@]}"; do
+    file=\${json_files[i]}
+    sed -E '
+      s#^\\{"geometries":\\[##;
+      s#\\],\"type\" *: *\"GeometryCollection\"\\} *\$##;
+    ' "\$file" >> merged.json
+    if [ \$i -lt \$((count - 1)) ]; then
+      echo ',' >> merged.json
+    fi
+  done
+  echo '],"type": "GeometryCollection"}' >> merged.json
+  """
 }

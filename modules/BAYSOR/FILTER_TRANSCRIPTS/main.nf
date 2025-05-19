@@ -7,18 +7,18 @@
 */
 
 // Prepares transcripts for baysor (and does actual splitting)
-// TODO
-// Change inputs for meta map
 process FILTER_TRANSCRIPTS {
+    tag "$meta.id"
+
     cpus params.filterCPUs
     memory "${params.filterMem} GB"
     
     input:
-    path resegmented_dir
+    tuple val(meta), path(resegmented_dir)
     tuple val(tile_id), val(x_min), val(x_max), val(y_min), val(y_max) // Tuple from splits.csv
 
     output:
-    path "*_filtered_transcripts.csv"
+    tuple val(meta), path("*_filtered_transcripts.csv")
 
    script:
     """

@@ -5,17 +5,18 @@
     BAYSOR
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
-// TODO
-// Change inputs for meta map
 process BAYSOR_RUN {
+    tag "$meta.id"
+    
     cpus params.baysorCPUs
     memory "${params.baysorMem} GB"
 
     input:
-    path transcripts_csv
+    tuple val(meta), path(transcripts_csv)
 
     output:
-    tuple path("segmentation.csv"), path("segmentation_polygons_2d.json")
+    tuple val(meta), path("segmentation.csv"), emit: csv
+    tuple val(meta), path("segmentation_polygons_2d.json"), emit: json
 
     script:
     """

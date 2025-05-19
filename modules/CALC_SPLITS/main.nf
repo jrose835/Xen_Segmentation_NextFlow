@@ -15,7 +15,7 @@ process CALC_SPLITS {
     tuple val(meta), path(xenium_bundle)
 
     output:
-    path "splits.csv"
+    tuple val(meta), path("splits.csv")
 
     script:
     """
