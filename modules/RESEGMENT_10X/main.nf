@@ -19,7 +19,8 @@ process RESEGMENT_10X {
     tuple val(meta), path(xenium_bundle)
 
     output:
-    tuple val(meta), path("${meta.id}_resegmented")
+    tuple val(meta), path("${meta.id}_resegmented"), emit: bundle
+    tuple val(meta), path("${meta.id}_resegmented/outs/transcripts.parquet"), emit: parquet
 
     script:
     """

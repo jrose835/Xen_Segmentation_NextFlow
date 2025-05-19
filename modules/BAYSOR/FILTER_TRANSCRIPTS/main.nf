@@ -14,15 +14,16 @@ process FILTER_TRANSCRIPTS {
     memory "${params.filterMem} GB"
     
     input:
-    tuple val(meta), path(resegmented_dir)
-    tuple val(tile_id), val(x_min), val(x_max), val(y_min), val(y_max) // Tuple from splits.csv
+    tuple val(meta), path(transcripts_path), val(tile_id), val(x_min), val(x_max), val(y_min), val(y_max)
+    //tuple val(meta), path(resegmented_dir)
+    //tuple val(tile_id), val(x_min), val(x_max), val(y_min), val(y_max) // Tuple from splits.csv
 
     output:
-    tuple val(meta), path("*_filtered_transcripts.csv")
+    tuple val(meta), path("*_filtered_transcripts.csv"), emit: transcripts_filtered
 
    script:
     """
-    filter_transcripts_parquet_v3.py -transcript "${resegmented_dir}/outs/transcripts.parquet" \\
+    filter_transcripts_parquet_v3.py -transcript "${transcripts_path}" \\
       -min_x ${x_min} -max_x ${x_max} \\
       -min_y ${y_min} -max_y ${y_max}
     """
