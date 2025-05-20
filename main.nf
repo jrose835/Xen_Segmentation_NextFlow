@@ -126,10 +126,12 @@ workflow {
 
     if ( params.runBaysor ) {
         // Calculate splits for tiling transcript file
-        ch_splits_csv = CALC_SPLITS(ch_transcripts_parquet)
+        CALC_SPLITS(ch_transcripts_parquet)
 
-        BAYSOR_PARALLEL(ch_transcripts_parquet, ch_splits_csv)
+        //Baysor segmentation (using parallel processing workflow)
+        BAYSOR_PARALLEL(ch_transcripts_parquet, CALC_SPLITS.out.ch_splits_csv)
 
+        //Importing baysor segmentation into new Xenium bundle
         IMPORT_SEGMENTATION(ch_bundle_path, BAYSOR_PARALLEL.out.segmentation)
     }
     

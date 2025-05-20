@@ -23,7 +23,7 @@ process FILTER_TRANSCRIPTS {
 
    script:
     """
-    filter_transcripts_parquet_v3.py -transcript "${transcripts_path}" \\
+    filter_transcripts_parquet_v4.py -transcript "${transcripts_path}" \\
       -min_x ${x_min} -max_x ${x_max} \\
       -min_y ${y_min} -max_y ${y_max}
     """
