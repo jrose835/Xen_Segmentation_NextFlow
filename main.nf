@@ -2,290 +2,137 @@
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    PARAMETER VALUES
+    IMPORT FUNCTIONS & MODULES
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
-params.input = null
-params.outputdir = "results"
-params.id = "nuclear"
 
-// RESEGMENT_10X
-params.expansion_distance = 5
-params.boundary_stain= "disable" // Possible options are: "ATP1A1/CD45/E-Cadherin" (default) or "disable".
-params.interior_stain= "disable" // Possible options are: "18S" (default) or "disable".
-params.dapi_filter = 100
+include { samplesheetToList        } from 'plugin/nf-schema'
 
-// CALC SPLITS 
-params.csplit_x_bins = 2 // number of slices along the x axis (total number of bins is product of x_bins * y_bins)
-params.csplit_y_bins = 2 // number of slices along the y axis
+//XeniumRanger
+include { RESEGMENT_10X            } from './modules/RESEGMENT_10X/main'
+include { IMPORT_SEGMENTATION      } from './modules/IMPORT_SEGMENTATION/main'
 
-// BAYSOR
-params.baysor_m = 1 // Minimal number of molecules for a cell to be considered as real
-params.baysor_prior = 0.8 // Confidence of the prior_segmentation results. Value in [0; 1]
-params.baysor_min_trans = 100 // Minimum number of transcripts in a baysor chunk to perform segmentation on
-
-// Resource Mgmt
-params.rangersegCPUs = 32
-params.rangersegMem = 128
-params.filterCPUs = 10
-params.filterMem = 100
-params.baysorCPUs = 8
-params.baysorMem = 100
-params.rangerimportCPUs = 32
-params.rangerimportMem = 128
-
-// Validate that the input parameter is specified
-if (!params.input) {
-    error "The --input parameter is required but was not specified. Please provide a valid input path."
-}
+//Baysor
+include { CALC_SPLITS              } from './modules/CALC_SPLITS/main'
+include { FILTER_TRANSCRIPTS       } from './modules/BAYSOR/FILTER_TRANSCRIPTS/main'
+include { BAYSOR_RUN               } from './modules/BAYSOR/BAYSOR_RUN/main'
+include { RECONSTRUCT_SEGMENTATION } from './modules/BAYSOR/RECONSTRUCT_SEGMENTATION/main'
 
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    RESEGMENT 10X
+    BAYSOR SUBWORKFLOW
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
+workflow BAYSOR_PARALLEL {
 
-// Process for re-segmenting using Xenium algorithm...typically nuclear-only
+    take:
+    ch_transcripts_parquet          // channel: [ val(meta), ["xenium-bundle"] ]
+    ch_splits_csv          // channel: [ val(meta), ["splits.csv"]]
 
-process RESEGMENT_10X {
-    publishDir params.outputdir, mode: "symlink"
-    cpus params.rangersegCPUs
-    memory "${params.rangersegMem} GB"
-    //debug true
+    main:
 
-    input:
-    path xen_dat     //Xenium output data path
+        // Set splits.csv into tuple queue channel
+        Channel
+            ch_splits_csv
+            .flatMap { meta, splits_file ->
+                splits_file.splitCsv(header: true).collect { row ->
+                    tuple(meta, row.tile_id, row.x_min, row.x_max, row.y_min, row.y_max)
+                }
+            }
+            .set { ch_splits } // channel: [ val(tile_id), val(x_min), val(x_max), val(y_min), val(y_max) ]
 
-    output:
-    path "${params.id}_nucsegmented"
+        //Add in sample path for each split value
+        transcripts_input = ch_transcripts_parquet.combine(ch_splits, by: 0)
 
-    script:
-    """
-    xeniumranger resegment \\
-      --id="${params.id}_nucsegmented" \\
-      --xenium-bundle=${xen_dat} \\
-      --expansion-distance=$params.expansion_distance \\
-      --boundary-stain=${params.boundary_stain} \\
-      --interior-stain=${params.interior_stain} \\
-      --localcores=${params.rangersegCPUs} \\
-      --localmem=${params.rangersegMem} \\
-      2>&1 | tee ranger_out.log
-    """
+        // Process and split transcripts file for Baysor
+        FILTER_TRANSCRIPTS(transcripts_input)
+
+        //Baysor run in chunked parallel
+        BAYSOR_RUN(FILTER_TRANSCRIPTS.out.transcripts_filtered)
+        
+        // Combine baysor file channels for reconstruction 
+        grouped_csvs = BAYSOR_RUN.out.csv.groupTuple(by: 0)
+        grouped_jsons = BAYSOR_RUN.out.json.groupTuple(by: 0)
+        merged_inputs = grouped_csvs.join(grouped_jsons, by: 0)
+
+        // Reconstruct segmentation files
+        RECONSTRUCT_SEGMENTATION(merged_inputs)
+
+
+    emit:
+    segmentation = RECONSTRUCT_SEGMENTATION.out.complete_segmentation
 
 
 }
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    CALC_SPLITS
+    MAIN WORKFLOW
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
-
-// Produces coordinates of quantile-based tiles to split transcripts file into for parallel baysor runs
-
-process CALC_SPLITS {
-
-    input:
-    path resegmented_dir 
-
-    output:
-    path "splits.csv"
-
-    script:
-    """
-    split_transcripts.py "${resegmented_dir}/outs/transcripts.parquet" "splits.csv" --x_bins ${params.csplit_x_bins} --y_bins ${params.csplit_y_bins} 
-    """
-
-}
-
-/*
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    FILTER_TRANSCRIPTS
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-*/
-
-// Prepares transcripts for baysor (and does actual splitting)
-
-process FILTER_TRANSCRIPTS {
-    cpus params.filterCPUs
-    memory "${params.filterMem} GB"
-    
-    input:
-    path resegmented_dir
-    tuple val(tile_id), val(x_min), val(x_max), val(y_min), val(y_max) // Tuple from splits.csv
-
-    output:
-    path "*_filtered_transcripts.csv"
-
-   script:
-    """
-    filter_transcripts_parquet_v3.py -transcript "${resegmented_dir}/outs/transcripts.parquet" \\
-      -min_x ${x_min} -max_x ${x_max} \\
-      -min_y ${y_min} -max_y ${y_max}
-    """
- }
-
-/*
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    BAYSOR
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-*/
-
-process BAYSOR {
-    cpus params.baysorCPUs
-    memory "${params.baysorMem} GB"
-
-    input:
-    path transcripts_csv
-
-    output:
-    tuple path("segmentation.csv"), path("segmentation_polygons_2d.json")
-
-    script:
-    """
-    export JULIA_NUM_THREADS=$params.baysorCPUs
-
-    # Count the number of rows in the CSV file (excluding the header)
-    row_count=\$(tail -n +2 ${transcripts_csv} | wc -l)
-
-    # Check if the transcript count is at least at specified minium
-    if [ "\$row_count" -ge $params.baysor_min_trans ]; then
-        echo "File ${transcripts_csv} has \$row_count rows. Running Baysor..."
-        baysor run -x x_location -y y_location -z z_location -g feature_name \\
-        -m $params.baysor_m -p --prior-segmentation-confidence $params.baysor_prior --polygon-format "GeometryCollectionLegacy" \\
-        ${transcripts_csv} :cell_id
-    else
-        echo "File ${transcripts_csv} has fewer than ${params.baysor_min_trans} rows (\$row_count). Skipping Baysor run."
-        echo "transcript_id,cell_id,overlaps_nucleus,gene,x,y,z,qv,fov_name,nucleus_distance,codeword_index,codeword_category,is_gene,molecule_id,prior_segmentation,confidence,cluster,cell,assignment_confidence,is_noise,ncv_color" > segmentation.csv
-        touch segmentation_polygons_2d.json
-    fi
-    """
-}
-
-/*
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    RECONSTRUCT_SEGMENTATION
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-*/
-process RECONSTRUCT_SEGMENTATION {
-
-    input:
-    val files_list
-
-    output:
-    tuple path("merged.csv"), path("merged.json")
-
-    script:
-    def csv_files = files_list.withIndex().findAll { it[1] % 2 == 0 }.collect { it[0] }
-    def json_files = files_list.withIndex().findAll { it[1] % 2 != 0 }.collect { it[0] }
-
-    """
-    # Merge CSV files (odd-indexed: 1,3,5,...)
-    head -n 1 ${csv_files[0]} > merged.csv
-    for csv in ${csv_files.join(' ')}; do
-        tail -n +2 \$csv >> merged.csv
-    done
-
-    # Merge JSON files (even-indexed: 2,4,6,...)
-    # Start the wrapper
-    echo '{"geometries": [' > merged.json
-
-    # put all the JSON filenames into a bash array
-    files=( ${json_files.join(' ')} )
-    count=\${#files[@]}
-
-    for i in \"\${!files[@]}\"; do
-      file=\${files[i]}
-
-      # strip off the outer wrapper, leaving just the inner array items
-      sed -E '
-        s#^\\{"geometries":\\[##; 
-        s#\\],\"type\" *: *\"GeometryCollection\"\\} *\$##;
-      ' \"\$file\" >> merged.json
-
-      # add a comma between items (but not after the last one)
-      if [ \$i -lt \$((count - 1)) ]; then
-        echo ',' >> merged.json
-      fi
-    done
-
-    # close out the wrapper
-    echo '],"type": "GeometryCollection"}' >> merged.json
-    """
-}
-/*
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    IMPORT_SEGMENTATION
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-*/
-
-process IMPORT_SEGMENTATION {
-    publishDir params.outputdir, mode: "symlink"
-    cpus params.rangerimportCPUs
-    memory "${params.rangerimportMem} GB"
-
-    input:
-    path reseg_ref
-    tuple path(segmentation), path(polygons)
-
-    output:
-    path "${params.id}_baysor"
-
-    script:
-    """
-    xeniumranger import-segmentation --id="${params.id}_baysor" \
-                                 --xenium-bundle=${reseg_ref}/outs \
-                                 --transcript-assignment=${segmentation} \
-                                 --viz-polygons=${polygons} \
-                                 --units=microns \
-                                 --localcores=${params.rangerimportCPUs} \
-                                 --localmem=${params.rangerimportMem}
-    """
-}
-
-
-/*
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    WORKFLOW
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-*/
-
 
 workflow {
 
-    input_channel = Channel.fromPath(params.input)
+    /*
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        INPUTS
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    */
 
-    // Run the RESEGMENT_10X process
-    resegmented_output = RESEGMENT_10X(input_channel)
-    // resegmented_output.view()
+    // Validate that the input and workflow parameters are specified
 
-    // Calculate splits
-    splits_csv = CALC_SPLITS(resegmented_output)
+    if (!params.input) {
+        error "The --input parameter is required but was not specified. Please provide a valid input path."
+    }
 
-    //Set resegmenated path as value channel
+    if (!params.runRanger && !params.runBaysor) {
+        error "No method set. Please set either runRanger or runBaysor to true."
+    }
+
+    // Set channels
+    //TODO: Make sure this isn't broken if file has additional metadata columns
     Channel
-        resegmented_output.first()
-        .set {reseg_ref}
+        .fromList(samplesheetToList(params.input, "${projectDir}/assets/schema_input.json"))
+        .map {
+            meta, bundle, image -> return [ [id: meta.id], bundle, image ]
+        }
+        .set { ch_samplesheet }
 
-    // Set splits.csv into queue channel
-    Channel
-        splits_csv.splitCsv(header: true)
-        .flatten()
-        .set{ splits_channel }
+    // get samplesheet fields
+    ch_bundle_path = ch_samplesheet.map { meta, bundle, _image ->
+        return [ meta, file(bundle)]
+    }
 
-    // Process and split transcripts file for Baysor
-    filtered_transcripts = FILTER_TRANSCRIPTS(reseg_ref, splits_channel)
-    // filtered_transcripts.view()
+    // get transcript.parquet
+    ch_transcripts_parquet = ch_samplesheet.map { meta, bundle, _image ->
+        def transcripts_parquet = file(bundle.replaceFirst(/\/$/, '') + "/transcripts.parquet")
+        return [ meta, transcripts_parquet ]
+    }
 
-    //Baysor run in chunked parallel
-    segments = BAYSOR(filtered_transcripts)
+    /*
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        Workflow
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    */
+
+    if ( params.runRanger ) {
+        // Run the RESEGMENT_10X process
+        RESEGMENT_10X(ch_bundle_path)
+        ch_transcripts_parquet = RESEGMENT_10X.out.parquet
+        ch_bundle_path = RESEGMENT_10X.out.bundle
+    }
+
+    if ( params.runBaysor ) {
+        // Calculate splits for tiling transcript file
+        ch_splits_csv = CALC_SPLITS(ch_transcripts_parquet)
+
+        BAYSOR_PARALLEL(ch_transcripts_parquet, ch_splits_csv)
+
+        IMPORT_SEGMENTATION(ch_bundle_path, BAYSOR_PARALLEL.out.segmentation)
+    }
     
-    // Reconstruct segmentation files
-    complete_segmentation = RECONSTRUCT_SEGMENTATION(segments.collect())
-    //complete_segmentation.view()
-
-    baysor_output = IMPORT_SEGMENTATION(reseg_ref, complete_segmentation)
-    baysor_output.view()
 }
+
+
