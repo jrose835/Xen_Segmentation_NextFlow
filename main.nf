@@ -33,12 +33,7 @@ workflow BAYSOR_PARALLEL {
 
     main:
 
-        // Set bundle channel into value
-        //Channel
-        //    ch_bundle_path.first() // TODO: NOt sure this is right
-        //    .set {reseg_ref} // channel: [val(meta), ["xenium-bundle"] ]
-
-        // Set splits.csv into queue channel
+        // Set splits.csv into tuple queue channel
         Channel
             ch_splits_csv
             .flatMap { meta, splits_file ->
@@ -50,28 +45,24 @@ workflow BAYSOR_PARALLEL {
 
         //Add in sample path for each split value
         transcripts_input = ch_transcripts_parquet.combine(ch_splits, by: 0)
-        //transcripts_input.view()
 
         // Process and split transcripts file for Baysor
         FILTER_TRANSCRIPTS(transcripts_input)
 
         //Baysor run in chunked parallel
         BAYSOR_RUN(FILTER_TRANSCRIPTS.out.transcripts_filtered)
-
-        // Combine inputs for reconstruction 
-        //TODO: Fix grouping here
-        //grouped_csvs = BAYSOR_RUN.out.csv.groupTuple(by: 0).map { meta, vals -> tuple(meta, vals.collect{ it[1] }) }
-        //grouped_csvs.view()
-        //grouped_jsons = BAYSOR_RUN.out.json.groupTuple(by: 0).map { meta, vals -> tuple(meta, vals.collect{ it[1] }) }
-        //merged_inputs = grouped_csvs.join(grouped_jsons, by: 0)
+        
+        // Combine baysor file channels for reconstruction 
+        grouped_csvs = BAYSOR_RUN.out.csv.groupTuple(by: 0)
+        grouped_jsons = BAYSOR_RUN.out.json.groupTuple(by: 0)
+        merged_inputs = grouped_csvs.join(grouped_jsons, by: 0)
 
         // Reconstruct segmentation files
-        //RECONSTRUCT_SEGMENTATION(merged_inputs)
+        RECONSTRUCT_SEGMENTATION(merged_inputs)
 
 
     emit:
-    output = ch_transcripts_parquet
-    //segmentation = RECONSTRUCT_SEGMENTATION.out.complete_segmentation
+    segmentation = RECONSTRUCT_SEGMENTATION.out.complete_segmentation
 
 
 }
@@ -137,9 +128,9 @@ workflow {
         // Calculate splits for tiling transcript file
         ch_splits_csv = CALC_SPLITS(ch_transcripts_parquet)
 
-        BAYSOR_PARALLEL(ch_transcripts_parquet, ch_splits_csv) 
-        
-        //baysor_output = IMPORT_SEGMENTATION(ch_bundle_path, complete_segmentation) //TODO fix input channels
+        BAYSOR_PARALLEL(ch_transcripts_parquet, ch_splits_csv)
+
+        IMPORT_SEGMENTATION(ch_bundle_path, BAYSOR_PARALLEL.out.segmentation)
     }
     
 }

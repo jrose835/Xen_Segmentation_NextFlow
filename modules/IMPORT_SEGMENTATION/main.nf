@@ -9,12 +9,13 @@
 // Change inputs for meta map
 
 process IMPORT_SEGMENTATION {
+    tag "$meta.id"
     publishDir params.outputdir, mode: "symlink"
     cpus params.rangerimportCPUs
     memory "${params.rangerimportMem} GB"
 
     input:
-    path reseg_ref
+    tuple val(meta), path(xenium_bundle)
     tuple path(segmentation), path(polygons)
 
     output:
@@ -23,7 +24,7 @@ process IMPORT_SEGMENTATION {
     script:
     """
     xeniumranger import-segmentation --id="${params.id}_baysor" \
-                                 --xenium-bundle=${reseg_ref}/outs \
+                                 --xenium-bundle=${xenium_bundle} \
                                  --transcript-assignment=${segmentation} \
                                  --viz-polygons=${polygons} \
                                  --units=microns \

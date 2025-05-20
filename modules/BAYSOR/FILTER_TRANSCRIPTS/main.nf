@@ -19,7 +19,7 @@ process FILTER_TRANSCRIPTS {
     //tuple val(tile_id), val(x_min), val(x_max), val(y_min), val(y_max) // Tuple from splits.csv
 
     output:
-    tuple val(meta), path("*_filtered_transcripts.csv"), emit: transcripts_filtered
+    tuple val(meta), val(tile_id), path("*_filtered_transcripts.csv"), emit: transcripts_filtered
 
    script:
     """
