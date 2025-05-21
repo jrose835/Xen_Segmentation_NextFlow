@@ -15,7 +15,7 @@ This workflow allows for re-segmenting 10x Xenium data via:
 
 Transcript inputs for Baysor are split into relatively even sized "chunks" and run in parrallel. 
 
-This **greatly improves runtime** for large Xenium experiments
+This **greatly improves runtime** for large Xenium experiments at the cost of some oversegmentation for cells found along chunk boundaries
  
 ## Workflow DAG
 
