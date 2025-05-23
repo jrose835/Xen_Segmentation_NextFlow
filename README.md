@@ -13,7 +13,7 @@ This workflow allows for re-segmenting 10x Xenium data via:
 
 ## Features
 
-Transcript inputs for Baysor are split into relatively even sized "chunks" and run in parrallel. 
+Transcript inputs for Baysor are automatically split into relatively even sized "chunks" designed to keep numbers of transcripts even between them and then these chunks are run through baysor in parrallel. 
 
 This **greatly improves runtime** for large Xenium experiments
  
