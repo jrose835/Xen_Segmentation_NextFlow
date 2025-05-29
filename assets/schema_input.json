@@ -22,6 +22,11 @@
                 "type": "string",
                 "pattern": "^\\S+$",
                 "errorMessage": "You can provide an image. If you do not then please leave the field empty."
+            },
+            "splits": {
+                "type": "string",
+                "pattern": "^.*\\.csv$",
+                "errorMessage": "Please provide a path to a CSV file containing tile coordinates, or leave empty to calculate splits automatically."
             }
         },
         "required": ["sample", "bundle"]

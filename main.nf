@@ -104,7 +104,7 @@ workflow {
     ch_bundle_path = ch_samplesheet.map { meta, bundle, _image , _splits->
         return [ meta, file(bundle)]
     }
-s
+    
     // get transcript.parquet
     ch_transcripts_parquet = ch_samplesheet.map { meta, bundle, _image, _splits ->
         def transcripts_parquet = file(bundle.replaceFirst(/\/$/, '') + "/transcripts.parquet")
@@ -112,8 +112,8 @@ s
     }
 
     // get user defined splits
-    ch_splits = ch_samplesheet.map { meta, bundle, _image , _splits->
-        return [ meta, file(_splits)]
+    ch_splits = ch_samplesheet.map { meta, _bundle, _image , splits->
+        return [ meta, file(splits)]
     }
 
     /*
@@ -131,18 +131,12 @@ s
 
     if ( params.runBaysor ) {
         // Calculate splits for tiling transcript file
-<<<<<<< Updated upstream
-        ch_splits_csv = CALC_SPLITS(ch_transcripts_parquet)
-
-        BAYSOR_PARALLEL(ch_transcripts_parquet, ch_splits_csv)
-=======
-        if (!params.input_splits) {
+        if (!params.preset_splits) {
             CALC_SPLITS(ch_transcripts_parquet)
             ch_splits = CALC_SPLITS.out.ch_splits_csv
         }
         //Baysor segmentation (using parallel processing workflow)
         BAYSOR_PARALLEL(ch_transcripts_parquet, ch_splits)
->>>>>>> Stashed changes
 
         IMPORT_SEGMENTATION(ch_bundle_path, BAYSOR_PARALLEL.out.segmentation)
     }
