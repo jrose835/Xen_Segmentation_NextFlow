@@ -66,20 +66,21 @@ tile2,1000,2000,0,1000
 flowchart TB
     subgraph " "
     subgraph params
+    v10["preset_splits"]
     v0["input"]
     v1["runRanger"]
     v2["runBaysor"]
     end
-    v6([RESEGMENT_10X])
-    v9([CALC_SPLITS])
-    v10([BAYSOR_PARALLEL])
-    v11([IMPORT_SEGMENTATION])
-    v0 --> v6
-    v6 --> v9
-    v6 --> v10
-    v9 --> v10
-    v6 --> v11
-    v10 --> v11
+    v7([RESEGMENT_10X])
+    v11([CALC_SPLITS])
+    v13([BAYSOR_PARALLEL])
+    v14([IMPORT_SEGMENTATION])
+    v0 --> v7
+    v7 --> v11
+    v7 --> v13
+    v11 --> v13
+    v7 --> v14
+    v13 --> v14
     end
 ```
 
