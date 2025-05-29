@@ -60,6 +60,15 @@ tile1,0,1000,0,1000
 tile2,1000,2000,0,1000
 ```
 
+## Recommendations
+
+The baysor segmentation takes into account priors from Xenium segmentation run by either Onboard Analyzer or XeniumRanger.
+
+In practice **it is best to use DAPI-based nuclear segmentation as the priors** for baysor
+
+> [!NOTE]
+> You can set the `baysor_prior` parameter to 0 to ignore these prior segmentation attempts. 
+
 ## Workflow DAG
 
 ```mermaid
