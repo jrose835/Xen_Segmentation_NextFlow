@@ -13,10 +13,30 @@ This workflow allows for re-segmenting 10x Xenium data via:
 
 ## Features
 
-Transcript inputs for Baysor are split into relatively even sized "chunks" and run in parrallel. 
+Transcript inputs for Baysor are automatically split into relatively even sized "chunks" of transcripts and run in parrallel. 
 
-This **greatly improves runtime** for large Xenium experiments at the cost of some oversegmentation for cells found along chunk boundaries
- 
+This **greatly improves runtime** for large Xenium experiments at the cost of some oversegmentation for cells found along chunk boundaries. If this is a concern, one solution is to manually assign pre-set chunk coordinates around tissue boundaries. 
+
+## Usage
+
+### To Run
+
+```
+nextflow run main.nf \
+    --input ./samplesheet.csv
+```
+
+#### Sample Sheet
+
+The pipeline takes as input a nf-core/spatialxe style samplesheet. With one additional column specified for pre-determined parallel splits. 
+
+```
+sample,bundle,image, splits
+breast_cancer,/path/to/xenium/bundle,/path/to/morphology.ome.tif, /path/to/predefined/splits.csv
+```
+
+See config for options!
+
 ## Workflow DAG
 
 ```mermaid

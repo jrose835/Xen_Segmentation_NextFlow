@@ -96,19 +96,24 @@ workflow {
     Channel
         .fromList(samplesheetToList(params.input, "${projectDir}/assets/schema_input.json"))
         .map {
-            meta, bundle, image -> return [ [id: meta.id], bundle, image ]
+            meta, bundle, image, splits -> return [ [id: meta.id], bundle, image, splits ]
         }
         .set { ch_samplesheet }
 
     // get samplesheet fields
-    ch_bundle_path = ch_samplesheet.map { meta, bundle, _image ->
+    ch_bundle_path = ch_samplesheet.map { meta, bundle, _image , _splits->
         return [ meta, file(bundle)]
     }
-
+    
     // get transcript.parquet
-    ch_transcripts_parquet = ch_samplesheet.map { meta, bundle, _image ->
+    ch_transcripts_parquet = ch_samplesheet.map { meta, bundle, _image, _splits ->
         def transcripts_parquet = file(bundle.replaceFirst(/\/$/, '') + "/transcripts.parquet")
         return [ meta, transcripts_parquet ]
+    }
+
+    // get user defined splits
+    ch_splits = ch_samplesheet.map { meta, _bundle, _image , splits->
+        return [ meta, file(splits)]
     }
 
     /*
@@ -126,10 +131,12 @@ workflow {
 
     if ( params.runBaysor ) {
         // Calculate splits for tiling transcript file
-        CALC_SPLITS(ch_transcripts_parquet)
-
+        if (!params.preset_splits) {
+            CALC_SPLITS(ch_transcripts_parquet)
+            ch_splits = CALC_SPLITS.out.ch_splits_csv
+        }
         //Baysor segmentation (using parallel processing workflow)
-        BAYSOR_PARALLEL(ch_transcripts_parquet, CALC_SPLITS.out.ch_splits_csv)
+        BAYSOR_PARALLEL(ch_transcripts_parquet, ch_splits)
 
         //Importing baysor segmentation into new Xenium bundle
         IMPORT_SEGMENTATION(ch_bundle_path, BAYSOR_PARALLEL.out.segmentation)
