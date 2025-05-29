@@ -4,39 +4,43 @@
 
 import argparse
 import sys
+import pyarrow.dataset as ds
+import pyarrow.compute as pc
 import pandas as pd
 
 
 def main():
-    # Parse input arguments.
     args = parse_args()
+    dataset = ds.dataset(args.transcript, format="parquet")
+    fname = ds.field("feature_name")
+    # build an Arrow expression combining all your filters
+    expr = (
+        (ds.field("qv") >= args.min_qv) &
+        (ds.field("x_location") >= args.min_x) &
+        (ds.field("x_location") <= args.max_x) &
+        (ds.field("y_location") >= args.min_y) &
+        (ds.field("y_location") <= args.max_y) &
+        ~pc.match_substring_regex(fname, "^NegControlProbe_") &
+        ~pc.match_substring_regex(fname, "^antisense_") &
+        ~pc.match_substring_regex(fname, "^NegControlCodeword_") &
+        ~pc.match_substring_regex(fname, "^UnassignedCodeword") &
+        ~pc.match_substring_regex(fname, "^BLANK_")
+    )
 
-    data_frame = pd.read_parquet(args.transcript)
+    scanner = dataset.scanner(
+        filter=expr,
+        batch_size=1_000_000
+    )
 
-    # Filter transcripts. Ignore negative controls
-    filtered_frame = data_frame[(data_frame["qv"] >= args.min_qv) &
-                                (data_frame["x_location"] >= args.min_x) &
-                                (data_frame["x_location"] <= args.max_x) &
-                                (data_frame["y_location"] >= args.min_y) &
-                                (data_frame["y_location"] <= args.max_y) &
-                                (~data_frame["feature_name"].str.startswith("NegControlProbe_")) &
-                                (~data_frame["feature_name"].str.startswith("antisense_")) &
-                                (~data_frame["feature_name"].str.startswith("NegControlCodeword_")) &
-                                (~data_frame["feature_name"].str.startswith("UnassignedCodeword")) &
-                                (~data_frame["feature_name"].str.startswith("BLANK_"))]
+    out_csv = f"X{args.min_x}-{args.max_x}_Y{args.min_y}-{args.max_y}_filtered_transcripts.csv"
+    header = True
+    with open(out_csv, 'w', newline='') as f:
+        for batch in scanner.to_batches():
+            df = batch.to_pandas()
+            df['cell_id'] = df['cell_id'].replace({-1: '0', 'UNASSIGNED': '0'})
+            df.to_csv(f, index=False, header=header)
+            header = False
 
-    # Change cell_id of cell-free transcripts from -1 to 0
-    neg_cell_row = filtered_frame["cell_id"] == -1
-    filtered_frame.loc[neg_cell_row,"cell_id"] = 0
-
-    # Output filtered transcripts to CSV
-    filtered_frame.to_csv('_'.join(["X"+str(args.min_x)+"-"+str(args.max_x), "Y"+str(args.min_y)+"-"+str(args.max_y), "filtered_transcripts.csv"]),
-                          index=False,
-                          encoding = 'utf-8')
-
-
-#--------------------------
-# Helper functions
 
 def parse_args():
     """Parses command-line options for main()."""

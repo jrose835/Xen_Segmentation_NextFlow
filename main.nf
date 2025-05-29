@@ -138,6 +138,7 @@ workflow {
         //Baysor segmentation (using parallel processing workflow)
         BAYSOR_PARALLEL(ch_transcripts_parquet, ch_splits)
 
+        //Importing baysor segmentation into new Xenium bundle
         IMPORT_SEGMENTATION(ch_bundle_path, BAYSOR_PARALLEL.out.segmentation)
     }
     

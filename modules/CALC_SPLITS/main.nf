@@ -15,7 +15,7 @@ process CALC_SPLITS {
     tuple val(meta), path(transcripts)
 
     output:
-    tuple val(meta), path("splits.csv")
+    tuple val(meta), path("splits.csv"), emit: ch_splits_csv
 
     script:
     """
