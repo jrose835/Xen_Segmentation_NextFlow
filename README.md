@@ -19,6 +19,13 @@ This **greatly improves runtime** for large Xenium experiments at the cost of so
 
 ## Usage
 
+### To Run
+
+```
+nextflow run main.nf \
+    --input ./samplesheet.csv
+```
+
 ### Sample Sheet
 
 The pipeline takes as input a nf-core/spatialxe style samplesheet. With one additional column specified for pre-determined parallel splits. 
@@ -26,13 +33,6 @@ The pipeline takes as input a nf-core/spatialxe style samplesheet. With one addi
 ```
 sample,bundle,image, splits
 breast_cancer,/path/to/xenium/bundle,/path/to/morphology.ome.tif, /path/to/predefined/splits.csv
-```
-
-### To Run
-
-```
-nextflow run main.nf \
-    --input ./samplesheet.csv
 ```
 
 See config for options!
