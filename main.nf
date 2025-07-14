@@ -113,7 +113,11 @@ workflow {
 
     // get user defined splits
     ch_splits = ch_samplesheet.map { meta, _bundle, _image , splits->
-        return [ meta, file(splits)]
+        if (splits?.trim()) {
+            return [ meta, file(splits) ]
+        } else {
+            return [ meta, null ]
+        }
     }
 
     /*
