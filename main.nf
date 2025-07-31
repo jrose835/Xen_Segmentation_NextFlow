@@ -112,8 +112,10 @@ workflow {
     }
 
     // get user defined splits
-    ch_splits = ch_samplesheet.map { meta, _bundle, _image , splits->
-        return [ meta, file(splits)]
+    if (params.preset_splits) {
+        ch_splits = ch_samplesheet.map { meta, _bundle, _image , splits->
+            return [ meta, file(splits)]
+        }
     }
 
     /*
