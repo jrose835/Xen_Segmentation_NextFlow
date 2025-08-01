@@ -1,6 +1,8 @@
 process SEGGER_PREDICT {
     tag "$meta.id"
     label 'process_gpu'
+    cpus params.seggerPredictCPUs
+    memory "${params.seggerPredictMem} GB"
 
     container "khersameesh24/segger:0.1.0"
 
@@ -9,14 +11,10 @@ process SEGGER_PREDICT {
     path(models_dir)
     path(transcripts)
 
-
     output:
     tuple val(meta), path("${meta.id}_benchmarks_dir")                                  , emit: benchmarks
     tuple val(meta), path("${meta.id}_benchmarks_dir/*/segger_transcripts.parquet")     , emit: transcripts
     path("versions.yml")                                                                , emit: versions
-
-    when:
-    task.ext.when == null || task.ext.when
 
     script:
     if (workflow.profile.tokenize(',').intersect(['conda', 'mamba']).size() >= 1) {

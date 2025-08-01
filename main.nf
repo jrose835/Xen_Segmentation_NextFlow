@@ -18,6 +18,11 @@ include { FILTER_TRANSCRIPTS       } from './modules/BAYSOR/FILTER_TRANSCRIPTS/m
 include { BAYSOR_RUN               } from './modules/BAYSOR/BAYSOR_RUN/main'
 include { RECONSTRUCT_SEGMENTATION } from './modules/BAYSOR/RECONSTRUCT_SEGMENTATION/main'
 
+//Segger
+include { SEGGER_TRAIN             } from './modules/segger/train/main'
+include { SEGGER_PREDICT           } from './modules/segger/predict/main'
+include { SEGGER_CREATE_DATASET    } from './modules/segger/create_dataset/main'
+// include { PARQUET_TO_CSV        } from './modules/spatialconverter/parquet_to_csv/main'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -74,10 +79,7 @@ workflow BAYSOR_PARALLEL {
 */
 // Adapted from nf-core/spatialxe
 
-include { SEGGER_TRAIN          } from './modules/segger/train/main'
-include { SEGGER_PREDICT        } from './modules/segger/predict/main'
-include { SEGGER_CREATE_DATASET } from './modules/segger/create_dataset/main'
-// include { PARQUET_TO_CSV        } from './modules/spatialconverter/parquet_to_csv/main'
+
 
 workflow SEGGER_CREATE_TRAIN_PREDICT {
 
@@ -121,7 +123,7 @@ workflow SEGGER_CREATE_TRAIN_PREDICT {
 
     versions       = ch_versions                          // channel: [ versions.yml ]
 
-
+}
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     MAIN WORKFLOW
@@ -142,7 +144,7 @@ workflow {
         error "The --input parameter is required but was not specified. Please provide a valid input path."
     }
 
-    if (!params.runRanger && !params.runBaysor) {
+    if (!params.runRanger && !params.runBaysor && !params.runSegger) {
         error "No method set. Please set either runRanger or runBaysor to true."
     }
 

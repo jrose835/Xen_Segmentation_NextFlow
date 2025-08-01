@@ -1,6 +1,8 @@
 process SEGGER_TRAIN {
     tag "$meta.id"
     label 'process_high'
+    cpus params.seggerTrainCPUs
+    memory "${params.seggerTrainMem} GB"
 
     container "khersameesh24/segger:0.1.0"
 
@@ -10,9 +12,6 @@ process SEGGER_TRAIN {
     output:
     tuple val(meta), path("${meta.id}_trained_models")   , emit: trained_models
     path("versions.yml")                                 , emit: versions
-
-    when:
-    task.ext.when == null || task.ext.when
 
     script:
     if (workflow.profile.tokenize(',').intersect(['conda', 'mamba']).size() >= 1) {

@@ -1,6 +1,7 @@
 process SEGGER_CREATE_DATASET {
     tag "$meta.id"
-    label 'process_high'
+    cpus params.seggerCreateCPUs
+    memory "${params.seggerCreateMem} GB"
 
     container "khersameesh24/segger:0.1.0"
 
@@ -10,9 +11,6 @@ process SEGGER_CREATE_DATASET {
     output:
     tuple val(meta), path("${meta.id}") , emit: datasetdir
     path("versions.yml")                , emit: versions
-
-    when:
-    task.ext.when == null || task.ext.when
 
     script:
     if (workflow.profile.tokenize(',').intersect(['conda', 'mamba']).size() >= 1) {
