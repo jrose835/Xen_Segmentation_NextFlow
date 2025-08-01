@@ -35,7 +35,7 @@ process BAYSOR_RUN {
     else
         echo "File ${transcripts_csv} has fewer than ${params.baysor_min_trans} rows (\$row_count). Skipping Baysor run."
         echo "transcript_id,cell_id,overlaps_nucleus,gene,x,y,z,qv,fov_name,nucleus_distance,codeword_index,codeword_category,is_gene,molecule_id,prior_segmentation,confidence,cluster,cell,assignment_confidence,is_noise,ncv_color" > ${tile_id}_segmentation.csv
-        touch segmentation_polygons_2d.json
+        touch ${tile_id}_segmentation_polygons_2d.json
     fi
     """
 }
