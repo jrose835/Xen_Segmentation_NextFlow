@@ -1,10 +1,9 @@
 process SEGGER_PREDICT {
     tag "$meta.id"
     label 'process_gpu'
+    publishDir params.outputdir, mode: "symlink", pattern:"${meta.id}*"
     cpus params.seggerPredictCPUs
     memory "${params.seggerPredictMem} GB"
-
-    container "khersameesh24/segger:0.1.0"
 
     input:
     tuple val(meta), path(segger_dataset)
@@ -15,6 +14,9 @@ process SEGGER_PREDICT {
     tuple val(meta), path("${meta.id}_benchmarks_dir")                                  , emit: benchmarks
     tuple val(meta), path("${meta.id}_benchmarks_dir/*/segger_transcripts.parquet")     , emit: transcripts
     path("versions.yml")                                                                , emit: versions
+
+    when:
+    task.ext.when == null || task.ext.when
 
     script:
     if (workflow.profile.tokenize(',').intersect(['conda', 'mamba']).size() >= 1) {
@@ -32,8 +34,8 @@ process SEGGER_PREDICT {
         --transcripts_file ${transcripts} \\
         --benchmarks_dir ${prefix}_benchmarks_dir \\
         --num_workers ${task.cpus} \\
-        --batch_size ${task.batch_size} \\
-        --use_cc ${task.cc_analysis} \\
+        --batch_size ${task.ext.batch_size} \\
+        --use_cc ${task.ext.cc_analysis} \\
         --knn_method ${params.segger_knn_method} \\
         ${args}
 

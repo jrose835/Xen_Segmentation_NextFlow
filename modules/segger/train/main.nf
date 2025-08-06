@@ -4,14 +4,15 @@ process SEGGER_TRAIN {
     cpus params.seggerTrainCPUs
     memory "${params.seggerTrainMem} GB"
 
-    container "khersameesh24/segger:0.1.0"
-
     input:
     tuple val(meta), path(dataset_dir)
 
     output:
     tuple val(meta), path("${meta.id}_trained_models")   , emit: trained_models
     path("versions.yml")                                 , emit: versions
+
+    when:
+    task.ext.when == null || task.ext.when
 
     script:
     if (workflow.profile.tokenize(',').intersect(['conda', 'mamba']).size() >= 1) {
@@ -28,9 +29,9 @@ process SEGGER_TRAIN {
         --models_dir ${prefix}_trained_models \\
         --sample_tag ${prefix} \\
         --num_workers ${task.cpus} \\
-        --batch_size ${task.batch_size} \\
-        --max_epochs ${task.max_epochs} \\
-        --devices ${task.devices} \\
+        --batch_size ${task.ext.batch_size} \\
+        --max_epochs ${task.ext.max_epochs} \\
+        --devices ${task.ext.devices} \\
         --accelerator ${params.segger_accelerator} \\
         ${args}
 

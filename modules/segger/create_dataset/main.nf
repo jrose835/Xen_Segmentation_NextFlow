@@ -3,14 +3,15 @@ process SEGGER_CREATE_DATASET {
     cpus params.seggerCreateCPUs
     memory "${params.seggerCreateMem} GB"
 
-    container "khersameesh24/segger:0.1.0"
-
     input:
     tuple val(meta), path(base_dir)
 
     output:
     tuple val(meta), path("${meta.id}") , emit: datasetdir
     path("versions.yml")                , emit: versions
+
+    when:
+    task.ext.when == null || task.ext.when
 
     script:
     if (workflow.profile.tokenize(',').intersect(['conda', 'mamba']).size() >= 1) {
@@ -32,8 +33,8 @@ process SEGGER_CREATE_DATASET {
         --data_dir ${prefix} \\
         --sample_type ${params.format} \\
         --n_workers ${task.cpus} \\
-        --tile_width ${task.tile_width} \\
-        --tile_height ${task.tile_height} \\
+        --tile_width ${task.ext.tile_width} \\
+        --tile_height ${task.ext.tile_height} \\
         ${args}
 
     cat <<-END_VERSIONS > versions.yml
