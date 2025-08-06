@@ -30,16 +30,29 @@ process RECONSTRUCT_SEGMENTATION {
   # Merge JSON files into a single GeometryCollection
   echo '{"geometries": [' > merged.json
   count=\${#json_files[@]}
-  for i in "\${!json_files[@]}"; do
-    file=\${json_files[i]}
-    sed -E '
-      s#^\\{"geometries":\\[##;
-      s#\\],\"type\" *: *\"GeometryCollection\"\\} *\$##;
-    ' "\$file" >> merged.json
-    if [ \$i -lt \$((count - 1)) ]; then
-      echo ',' >> merged.json
-    fi
-  done
+   first_entry=true
+   for i in "\${!json_files[@]}"; do
+       file=\${json_files[i]}
+       # Extract content and check if it's non-empty after sed processing
+       content=\$(sed -E '
+           s#^\\{"geometries":\\[##;
+           s#\\],"type" *: *"GeometryCollection"\\} *\$##;
+       ' "\$file" | tr -d '[:space:]')
+      
+       # Only process if content is not empty
+       if [ -n "\$content" ]; then
+           # Add comma before entry if not the first
+           if [ "\$first_entry" = false ]; then
+               echo ',' >> merged.json
+           fi
+           # Re-run sed to get the formatted output (with whitespace preserved)
+           sed -E '
+               s#^\\{"geometries":\\[##;
+               s#\\],"type" *: *"GeometryCollection"\\} *\$##;
+           ' "\$file" >> merged.json
+           first_entry=false
+       fi
+   done
   echo '],"type": "GeometryCollection"}' >> merged.json
   """
 }
