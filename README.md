@@ -2,7 +2,7 @@
 A custom Nextflow pipeline for generating alternative cell segmentations for 10x Xenium spatial transcriptomic data
 
 > [!NOTE]
-> This is workflow follows SOME but NOT ALL of the nf-core template/guidelines. It's really just a custom Nextflow built for specific needs
+> This workflow follows SOME but NOT ALL of the nf-core template/guidelines. It's really just a custom Nextflow built for specific needs
 
 ## Overview 
 This workflow allows for re-segmenting 10x Xenium data via:
@@ -10,6 +10,7 @@ This workflow allows for re-segmenting 10x Xenium data via:
 - Alternative settings from `xeniumranger resegment`
     - i.e. DAPI/nuclear only
 - Baysor (https://github.com/kharchenkolab/Baysor)
+- Segger (https://elihei2.github.io/segger_dev/)
 
 ## Features
 
