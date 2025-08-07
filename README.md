@@ -15,15 +15,33 @@ This workflow allows for re-segmenting 10x Xenium data via:
 
 ### Baysor Parallel
 
-Transcript inputs for Baysor are automatically split into relatively even sized "chunks" of transcripts and run in parallel. 
+Transcript inputs for [Baysor](https://kharchenkolab.github.io/Baysor/dev/) are automatically split into relatively even sized "chunks" of transcripts and run in parallel. 
 
 This **greatly improves runtime** for large Xenium experiments at the cost of some oversegmentation for cells found along chunk boundaries. If this is a concern, one solution is to manually assign pre-set chunk coordinates around tissue boundaries. 
 
+#### Memory Constraints 
+
+For samples with large numbers of transcripts (i.e. 5K prime runs) the memory constraints for Baysor can still be enormous. 
+
+> [!Note]
+> I've found that typically Baysor needs **~230kb of memory per transcript**. Plan out our chunk sizes and memory allocations accordingly!
+
+### XeniumRanger 
+
+[XeniumRanger](https://www.10xgenomics.com/support/software/xenium-ranger/latest) module implementations for resegmenting and importing segmentations from baysor
+
+### Segger
+
+[Segger](https://elihei2.github.io/segger_dev/) modules for implementation of GNN-based segmentation. Based on [spatialxe project](https://github.com/nf-core/spatialxe)
+
+> [!Note]
+> Works best on machines with GPU
+
 ## Installation
 
-This pipeline uses the MTA_pipeline3 docker image. 
+Most of this pipeline uses the MTA_pipeline3 docker image. See ./docker for dockerfile
 
-See ./docker for dockerfile
+Segger modules require the danielunyi42/segger_dev image available on dockerhub
 
 ## Usage
 
