@@ -2,7 +2,7 @@
 A custom Nextflow pipeline for generating alternative cell segmentations for 10x Xenium spatial transcriptomic data
 
 > [!NOTE]
-> This is workflow follows SOME but NOT ALL of the nf-core template/guidelines. It's really just a custom Nextflow built for specific needs
+> This workflow follows SOME but NOT ALL of the nf-core template/guidelines. It's really just a custom Nextflow built for specific needs
 
 ## Overview 
 This workflow allows for re-segmenting 10x Xenium data via:
@@ -10,6 +10,7 @@ This workflow allows for re-segmenting 10x Xenium data via:
 - Alternative settings from `xeniumranger resegment`
     - i.e. DAPI/nuclear only
 - Baysor (https://github.com/kharchenkolab/Baysor)
+- Segger (https://elihei2.github.io/segger_dev/)
 
 ## Features
 
@@ -19,12 +20,12 @@ Transcript inputs for [Baysor](https://kharchenkolab.github.io/Baysor/dev/) are 
 
 This **greatly improves runtime** for large Xenium experiments at the cost of some oversegmentation for cells found along chunk boundaries. If this is a concern, one solution is to manually assign pre-set chunk coordinates around tissue boundaries. 
 
-#### Memory Constraints 
+#### Baysor Memory Constraints 
 
-For samples with large numbers of transcripts (i.e. 5K prime runs) the memory constraints for Baysor can still be enormous. 
+For samples with large numbers of transcripts (i.e. 5K prime runs) the memory requirements for Baysor can still be enormous. 
 
 > [!Note]
-> I've found that typically Baysor needs **~230kb of memory per transcript**. Plan out our chunk sizes and memory allocations accordingly!
+> I've found that typically Baysor needs **~230kb of memory per transcript**. Plan out your chunk sizes and memory allocations accordingly!
 
 ### XeniumRanger 
 
