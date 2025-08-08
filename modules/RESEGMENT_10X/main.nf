@@ -11,7 +11,7 @@
 
 process RESEGMENT_10X {
     tag "$meta.id"
-    publishDir params.outputdir, mode: "symlink", pattern:"*_resegmented"
+    publishDir params.outputdir, mode: "copy", pattern:"*_resegmented"
     cpus params.rangersegCPUs
     memory "${params.rangersegMem} GB"
 
