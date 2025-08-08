@@ -1,7 +1,7 @@
 process SEGGER_PREDICT {
     tag "$meta.id"
     label 'process_gpu'
-    publishDir params.outputdir, mode: "symlink", pattern:"${meta.id}*"
+    publishDir params.outputdir, mode: "copy", pattern:"${meta.id}*"
     cpus params.seggerPredictCPUs
     memory "${params.seggerPredictMem} GB"
 

@@ -1,5 +1,12 @@
+#!/usr/bin/env python3
+"""
+Command-line tool for converting segmentation results into Xenium Explorer-compatible Zarr datasets.
+"""
+
 import os
 import sys
+import argparse
+import json
 from pathlib import Path
 import gzip
 import pandas as pd
@@ -26,14 +33,54 @@ def get_flatten_version(polygon_vertices: List[List[Tuple[float, float]]], max_v
     """
     flattened = []
     
-    if isinstance(vertices, np.ndarray):
-        vertices = vertices.tolist()
-        
     for vertices in polygon_vertices:
-        if len(vertices) > max_value:
-            flattened.append(vertices[:max_value])
+        # Convert to numpy array if not already
+        if isinstance(vertices, np.ndarray):
+            vertices_array = vertices
         else:
-            flattened.append(vertices + [(0.0, 0.0)] * (max_value - len(vertices)))
+            vertices_array = np.array(vertices)
+        
+        # Ensure it's 2D with shape (n, 2)
+        if vertices_array.ndim == 1:
+            # Handle empty or malformed arrays
+            if len(vertices_array) == 0:
+                vertices_array = np.array([]).reshape(0, 2)
+            else:
+                # Try to reshape if it's a flattened array
+                try:
+                    vertices_array = vertices_array.reshape(-1, 2)
+                except:
+                    # If reshape fails, skip this polygon
+                    print(f"Warning: Could not reshape vertices array with shape {vertices_array.shape}")
+                    vertices_array = np.array([[0.0, 0.0]])
+        
+        # Get the number of vertices
+        n_vertices = len(vertices_array)
+        
+        if n_vertices > max_value:
+            # Truncate to max_value
+            result = vertices_array[:max_value]
+        elif n_vertices < max_value:
+            # Pad with zeros to reach max_value
+            padding = np.zeros((max_value - n_vertices, 2), dtype=np.float32)
+            if n_vertices > 0:
+                result = np.vstack([vertices_array, padding])
+            else:
+                result = padding
+        else:
+            # Exactly max_value vertices
+            result = vertices_array
+        
+        # Ensure the result has the correct shape and type
+        result = np.array(result, dtype=np.float32)
+        if result.shape != (max_value, 2):
+            print(f"Warning: Unexpected shape {result.shape}, expected ({max_value}, 2)")
+            # Force to correct shape
+            result = np.zeros((max_value, 2), dtype=np.float32)
+        
+        flattened.append(result)
+    
+    # Stack all polygons into a single array
     return np.array(flattened, dtype=np.float32)
 
 
@@ -67,6 +114,9 @@ def seg2explorer(
     """
     source_path = Path(source_path)
     storage = Path(output_dir)
+    
+    # Create output directory if it doesn't exist
+    storage.mkdir(parents=True, exist_ok=True)
 
     cell_id2old_id: Dict[int, Any] = {}
     cell_id: List[int] = []
@@ -78,7 +128,7 @@ def seg2explorer(
     grouped_by = seg_df.groupby(cell_id_columns)
 
     for cell_incremental_id, (seg_cell_id, seg_cell) in tqdm(
-        enumerate(grouped_by), total=len(grouped_by)
+        enumerate(grouped_by), total=len(grouped_by), desc="Processing cells"
     ):
         if len(seg_cell) < 5:
             continue
@@ -118,12 +168,14 @@ def seg2explorer(
             len(nucleus_convex_hull.vertices) if nucleus_convex_hull else 0
         )
         polygon_vertices[0].append(list(cell_convex_hull.exterior.coords))
-        polygon_vertices[1].append(
-            seg_nucleous[["x_location", "y_location"]].values[
-                nucleus_convex_hull.vertices
-            ]
-            if nucleus_convex_hull else np.array([[], []]).T
-        )
+        
+        # Handle nucleus vertices properly
+        if nucleus_convex_hull is not None:
+            nucleus_vertices = seg_nucleous[["x_location", "y_location"]].values[nucleus_convex_hull.vertices]
+            polygon_vertices[1].append(nucleus_vertices.tolist())
+        else:
+            # Append empty array with correct shape for nucleus
+            polygon_vertices[1].append([])
         seg_mask_value.append(uint_cell_id)
 
     cell_polygon_vertices = get_flatten_version(polygon_vertices[0], max_value=128)
@@ -147,7 +199,7 @@ def seg2explorer(
         "seg_mask_value": np.array(seg_mask_value, dtype=np.int32),
     }
 
-    source_zarr_store = ZipStore(source_path / "cells.zarr.zip", mode="r") # added this line
+    source_zarr_store = ZipStore(source_path / "cells.zarr.zip", mode="r")
     existing_store = zarr.open(source_zarr_store, mode="r")
     new_store = zarr.open(storage / f"{cells_filename}.zarr.zip", mode="w")
     new_store["cell_id"] = cells["cell_id"]
@@ -209,6 +261,11 @@ def seg2explorer(
         cells_name=cells_filename,
         analysis_name=analysis_filename,
     )
+    
+    print(f"✓ Successfully created Xenium Explorer files in {output_dir}")
+    print(f"  - Cells: {cells_filename}.zarr.zip")
+    print(f"  - Analysis: {analysis_filename}.zarr.zip")
+    print(f"  - Experiment: {xenium_filename}")
 
 
 def str_to_uint32(cell_id_str: str) -> Tuple[int, int]:
@@ -268,158 +325,6 @@ def get_indices_indptr(input_array: np.ndarray) -> Tuple[np.ndarray, np.ndarray]
     return indices, indptr
 
 
-def save_cell_clustering(
-    merged: pd.DataFrame, zarr_path: str, columns: List[str]
-) -> None:
-    """Save cell clustering information to a Zarr file.
-
-    Args:
-        merged (pd.DataFrame): The merged dataframe containing cell clustering information.
-        zarr_path (str): The path to the Zarr file.
-        columns (List[str]): The list of columns to save.
-    """
-    import zarr
-
-    new_zarr = zarr.open(zarr_path, mode="w")
-    new_zarr.create_group("/cell_groups")
-
-    mappings = []
-    for index, column in enumerate(columns):
-        new_zarr["cell_groups"].create_group(index)
-        classes = list(np.unique(merged[column].astype(str)))
-        mapping_dict = {
-            key: i
-            for i, key in zip(
-                range(1, len(classes)), [k for k in classes if k != "nan"]
-            )
-        }
-        mapping_dict["nan"] = 0
-
-        clusters = merged[column].astype(str).replace(mapping_dict).values.astype(int)
-        indices, indptr = get_indices_indptr(clusters)
-
-        new_zarr["cell_groups"][index].create_dataset("indices", data=indices)
-        new_zarr["cell_groups"][index].create_dataset("indptr", data=indptr)
-        mappings.append(mapping_dict)
-
-    new_zarr["cell_groups"].attrs.update(
-        {
-            "major_version": 1,
-            "minor_version": 0,
-            "number_groupings": len(columns),
-            "grouping_names": columns,
-            "group_names": [
-                [k for k, v in sorted(mapping_dict.items(), key=lambda item: item[1])][
-                    1:
-                ]
-                for mapping_dict in mappings
-            ],
-        }
-    )
-    new_zarr.store.close()
-
-
-def draw_umap(adata, column: str = "leiden") -> None:
-    """Draw UMAP plots for the given AnnData object.
-
-    Args:
-        adata (AnnData): The AnnData object containing the data.
-        column (str): The column to color the UMAP plot by.
-    """
-    sc.pl.umap(adata, color=[column])
-    plt.show()
-
-    sc.pl.umap(adata, color=["Ifitm3", "Beta-gal-mRNA"], vmax="p95")
-    plt.show()
-
-    sc.pl.umap(adata, color=["Cd4", "Ptprc"], vmax="p95")
-    plt.show()
-
-
-def get_leiden_umap(adata, draw: bool = False):
-    """Perform Leiden clustering and UMAP visualization on the given AnnData object.
-
-    Args:
-        adata (AnnData): The AnnData object containing the data.
-        draw (bool): Whether to draw the UMAP plots.
-
-    Returns:
-        AnnData: The AnnData object with Leiden clustering and UMAP results.
-    """
-    sc.pp.filter_cells(adata, min_genes=5)
-    sc.pp.filter_genes(adata, min_cells=5)
-
-    gene_names = adata.var_names
-    mean_expression_values = adata.X.mean(axis=0)
-    gene_mean_expression_df = pd.DataFrame(
-        {"gene_name": gene_names, "mean_expression": mean_expression_values}
-    )
-    top_genes = gene_mean_expression_df.sort_values(
-        by="mean_expression", ascending=False
-    ).head(30)
-    top_gene_names = top_genes["gene_name"].tolist()
-
-    sc.pp.normalize_total(adata)
-    sc.pp.log1p(adata)
-    sc.pp.neighbors(adata, n_neighbors=10, n_pcs=30)
-    sc.tl.umap(adata)
-    sc.tl.leiden(adata)
-
-    if draw:
-        draw_umap(adata, "leiden")
-
-    return adata
-
-
-# def get_median_expression_table(adata, column: str = "leiden") -> pd.DataFrame:
-#     """Get the median expression table for the given AnnData object.
-
-#     Args:
-#         adata (AnnData): The AnnData object containing the data.
-#         column (str): The column to group by.
-
-#     Returns:
-#         pd.DataFrame: The median expression table.
-#     """
-#     top_genes = [
-#         "GATA3",
-#         "ACTA2",
-#         "KRT7",
-#         "KRT8",
-#         "KRT5",
-#         "AQP1",
-#         "SERPINA3",
-#         "PTGDS",
-#         "CXCR4",
-#         "SFRP1",
-#         "ENAH",
-#         "MYH11",
-#         "SVIL",
-#         "KRT14",
-#         "CD4",
-#     ]
-#     top_gene_indices = [adata.var_names.get_loc(gene) for gene in top_genes]
-
-#     clusters = adata.obs[column]
-#     cluster_data = {}
-
-#     for cluster in clusters.unique():
-#         cluster_cells = adata[clusters == cluster].X
-#         cluster_expression = cluster_cells[:, top_gene_indices]
-#         gene_medians = [
-#             pd.Series(cluster_expression[:, gene_idx]).median()
-#             for gene_idx in range(len(top_gene_indices))
-#         ]
-#         cluster_data[f"Cluster_{cluster}"] = gene_medians
-
-#     cluster_expression_df = pd.DataFrame(cluster_data, index=top_genes)
-#     sorted_columns = sorted(
-#         cluster_expression_df.columns.values, key=lambda x: int(x.split("_")[-1])
-#     )
-#     cluster_expression_df = cluster_expression_df[sorted_columns]
-#     return cluster_expression_df.T.style.background_gradient(cmap="Greens")
-
-
 def generate_experiment_file(
     template_path: str,
     output_path: str,
@@ -439,16 +344,197 @@ def generate_experiment_file(
     with open(template_path) as f:
         experiment = json.load(f)
 
-    experiment["images"].pop("morphology_filepath")
-    experiment["images"].pop("morphology_focus_filepath")
+    experiment["images"].pop("morphology_filepath", None)
+    experiment["images"].pop("morphology_focus_filepath", None)
 
     experiment["xenium_explorer_files"][
         "cells_zarr_filepath"
     ] = f"{cells_name}.zarr.zip"
-    experiment["xenium_explorer_files"].pop("cell_features_zarr_filepath")
+    experiment["xenium_explorer_files"].pop("cell_features_zarr_filepath", None)
     experiment["xenium_explorer_files"][
         "analysis_zarr_filepath"
     ] = f"{analysis_name}.zarr.zip"
 
     with open(output_path, "w") as f:
         json.dump(experiment, f, indent=2)
+
+
+def main():
+    """Main function to parse arguments and run seg2explorer."""
+    parser = argparse.ArgumentParser(
+        description="Convert segmentation results into Xenium Explorer-compatible Zarr datasets",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Basic usage with required arguments
+  %(prog)s segmentation.parquet /path/to/source ./output
+
+  # With custom filenames and thresholds
+  %(prog)s segmentation.parquet /path/to/source ./output \\
+    --cells-filename my_cells \\
+    --analysis-filename my_analysis \\
+    --xenium-filename my_experiment.xenium \\
+    --area-low 5 \\
+    --area-high 200
+
+  # With analysis dataframe
+  %(prog)s segmentation.parquet /path/to/source ./output \\
+    --analysis-df clusters.parquet \\
+    --cell-id-column custom_cell_id
+        """
+    )
+    
+    # Required arguments
+    parser.add_argument(
+        "seg_df",
+        type=str,
+        help="Path to segmented transcript dataframe (Parquet format)"
+    )
+    parser.add_argument(
+        "source_path",
+        type=str,
+        help="Path to the original Zarr store directory"
+    )
+    parser.add_argument(
+        "output_dir",
+        type=str,
+        help="Output directory to save new Zarr and Xenium files"
+    )
+    
+    # Optional arguments
+    parser.add_argument(
+        "--cells-filename",
+        type=str,
+        default="seg_cells",
+        help="Filename prefix for cell Zarr file (default: seg_cells)"
+    )
+    parser.add_argument(
+        "--analysis-filename",
+        type=str,
+        default="seg_analysis",
+        help="Filename prefix for cell group Zarr file (default: seg_analysis)"
+    )
+    parser.add_argument(
+        "--xenium-filename",
+        type=str,
+        default="seg_experiment.xenium",
+        help="Output experiment filename for Xenium (default: seg_experiment.xenium)"
+    )
+    parser.add_argument(
+        "--analysis-df",
+        type=str,
+        default=None,
+        help="Optional path to dataframe with cluster annotations (Parquet format)"
+    )
+    parser.add_argument(
+        "--draw",
+        action="store_true",
+        help="Whether to draw polygons (currently not used)"
+    )
+    parser.add_argument(
+        "--cell-id-column",
+        type=str,
+        default="seg_cell_id",
+        help="Column containing cell IDs (default: seg_cell_id)"
+    )
+    parser.add_argument(
+        "--area-low",
+        type=float,
+        default=10,
+        help="Minimum area threshold to include cells (default: 10)"
+    )
+    parser.add_argument(
+        "--area-high",
+        type=float,
+        default=100,
+        help="Maximum area threshold to include cells (default: 100)"
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable verbose output"
+    )
+    
+    args = parser.parse_args()
+    
+    # Validate input file
+    if not args.seg_df.endswith('.parquet'):
+        raise ValueError(f"Input file must be in Parquet format (*.parquet). Got: {args.seg_df}")
+    
+    if not Path(args.seg_df).exists():
+        raise FileNotFoundError(f"Segmentation file not found: {args.seg_df}")
+    
+    # Load segmentation dataframe
+    if args.verbose:
+        print(f"Loading segmentation data from {args.seg_df}...")
+    
+    try:
+        seg_df = pd.read_parquet(args.seg_df)
+    except Exception as e:
+        raise ValueError(f"Failed to read Parquet file {args.seg_df}: {e}")
+    
+    if args.verbose:
+        print(f"Loaded {len(seg_df):,} rows from segmentation dataframe")
+        print(f"Columns: {', '.join(seg_df.columns)}")
+    
+    # Load analysis dataframe if provided
+    analysis_df = None
+    if args.analysis_df:
+        if not args.analysis_df.endswith('.parquet'):
+            raise ValueError(f"Analysis file must be in Parquet format (*.parquet). Got: {args.analysis_df}")
+        
+        if not Path(args.analysis_df).exists():
+            raise FileNotFoundError(f"Analysis file not found: {args.analysis_df}")
+        
+        if args.verbose:
+            print(f"Loading analysis data from {args.analysis_df}...")
+        
+        try:
+            analysis_df = pd.read_parquet(args.analysis_df)
+        except Exception as e:
+            raise ValueError(f"Failed to read Parquet file {args.analysis_df}: {e}")
+        
+        if args.verbose:
+            print(f"Loaded analysis dataframe with {len(analysis_df):,} rows")
+            print(f"Columns: {', '.join(analysis_df.columns)}")
+    
+    # Validate source path
+    source_path = Path(args.source_path)
+    if not source_path.exists():
+        raise FileNotFoundError(f"Source path does not exist: {args.source_path}")
+    
+    if not (source_path / "cells.zarr.zip").exists():
+        raise FileNotFoundError(f"cells.zarr.zip not found in {args.source_path}")
+    
+    if not (source_path / "experiment.xenium").exists():
+        raise FileNotFoundError(f"experiment.xenium not found in {args.source_path}")
+    
+    # Run seg2explorer
+    if args.verbose:
+        print(f"\nStarting conversion...")
+        print(f"  Source: {args.source_path}")
+        print(f"  Output: {args.output_dir}")
+        print(f"  Cell ID column: {args.cell_id_column}")
+        print(f"  Area thresholds: {args.area_low} - {args.area_high}")
+    
+    try:
+        seg2explorer(
+            seg_df=seg_df,
+            source_path=args.source_path,
+            output_dir=args.output_dir,
+            cells_filename=args.cells_filename,
+            analysis_filename=args.analysis_filename,
+            xenium_filename=args.xenium_filename,
+            analysis_df=analysis_df,
+            draw=args.draw,
+            cell_id_columns=args.cell_id_column,
+            area_low=args.area_low,
+            area_high=args.area_high,
+        )
+    except Exception as e:
+        print(f"Error during conversion: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
