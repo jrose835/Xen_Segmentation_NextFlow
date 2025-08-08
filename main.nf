@@ -22,6 +22,7 @@ include { RECONSTRUCT_SEGMENTATION } from './modules/BAYSOR/RECONSTRUCT_SEGMENTA
 include { SEGGER_TRAIN             } from './modules/segger/train/main'
 include { SEGGER_PREDICT           } from './modules/segger/predict/main'
 include { SEGGER_CREATE_DATASET    } from './modules/segger/create_dataset/main'
+include { SEGGER_EXPLORER          } from './modules/segger/explorer/main'
 // include { PARQUET_TO_CSV        } from './modules/spatialconverter/parquet_to_csv/main'
 
 /*
@@ -109,6 +110,17 @@ workflow SEGGER_CREATE_TRAIN_PREDICT {
     }
     SEGGER_PREDICT ( SEGGER_CREATE_DATASET.out.datasetdir, ch_just_trained_models, ch_just_transcripts_parquet )
     ch_versions = ch_versions.mix ( SEGGER_PREDICT.out.versions )
+
+    // Extract the segger transcripts parquet from the nested directory structure
+    ch_segger_transcripts = SEGGER_PREDICT.out.transcripts.map { meta, transcripts_files ->
+        // Handle the glob pattern result - get the first (and should be only) file
+        def transcript_file = transcripts_files instanceof List ? transcripts_files[0] : transcripts_files
+        return [ meta, transcript_file ]
+    }
+
+    // Run SEGGER_EXPLORER to create Xenium Explorer compatible files
+    SEGGER_EXPLORER ( ch_segger_transcripts, ch_basedir )
+    ch_versions = ch_versions.mix ( SEGGER_EXPLORER.out.versions )
 
     // convert parquet to csv
     //PARQUET_TO_CSV( SEGGER_PREDICT.out.transcripts )

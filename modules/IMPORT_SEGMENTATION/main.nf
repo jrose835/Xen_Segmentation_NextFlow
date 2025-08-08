@@ -10,7 +10,7 @@
 
 process IMPORT_SEGMENTATION {
     tag "$meta.id"
-    publishDir params.outputdir, mode: "symlink"
+    publishDir params.outputdir, mode: "copy"
     cpus params.rangerimportCPUs
     memory "${params.rangerimportMem} GB"
 

@@ -20,12 +20,12 @@ Transcript inputs for [Baysor](https://kharchenkolab.github.io/Baysor/dev/) are 
 
 This **greatly improves runtime** for large Xenium experiments at the cost of some oversegmentation for cells found along chunk boundaries. If this is a concern, one solution is to manually assign pre-set chunk coordinates around tissue boundaries. 
 
-#### Memory Constraints 
+#### Baysor Memory Constraints 
 
-For samples with large numbers of transcripts (i.e. 5K prime runs) the memory constraints for Baysor can still be enormous. 
+For samples with large numbers of transcripts (i.e. 5K prime runs) the memory requirements for Baysor can still be enormous. 
 
 > [!Note]
-> I've found that typically Baysor needs **~230kb of memory per transcript**. Plan out our chunk sizes and memory allocations accordingly!
+> I've found that typically Baysor needs **~230kb of memory per transcript**. Plan out your chunk sizes and memory allocations accordingly!
 
 ### XeniumRanger 
 
