@@ -85,12 +85,10 @@ workflow BAYSOR_PARALLEL {
 workflow SEGGER_CREATE_TRAIN_PREDICT {
 
     take:
-
     ch_basedir              // channel: [ val(meta), [ "basedir" ] ]
     ch_transcripts_parquet  // channel: [ val(meta), [bundle + "/transcripts.parquet"]]
 
     main:
-
     ch_versions = Channel.empty()
 
     // create dataset
@@ -108,12 +106,16 @@ workflow SEGGER_CREATE_TRAIN_PREDICT {
     ch_just_transcripts_parquet = ch_transcripts_parquet.map {
                 _meta, transcripts -> return [ transcripts ]
     }
-    SEGGER_PREDICT ( SEGGER_CREATE_DATASET.out.datasetdir, ch_just_trained_models, ch_just_transcripts_parquet )
+    
+    SEGGER_PREDICT ( 
+        SEGGER_CREATE_DATASET.out.datasetdir, 
+        ch_just_trained_models, 
+        ch_just_transcripts_parquet 
+    )
     ch_versions = ch_versions.mix ( SEGGER_PREDICT.out.versions )
 
     // Extract the segger transcripts parquet from the nested directory structure
     ch_segger_transcripts = SEGGER_PREDICT.out.transcripts.map { meta, transcripts_files ->
-        // Handle the glob pattern result - get the first (and should be only) file
         def transcript_file = transcripts_files instanceof List ? transcripts_files[0] : transcripts_files
         return [ meta, transcript_file ]
     }
@@ -122,19 +124,12 @@ workflow SEGGER_CREATE_TRAIN_PREDICT {
     SEGGER_EXPLORER ( ch_segger_transcripts, ch_basedir )
     ch_versions = ch_versions.mix ( SEGGER_EXPLORER.out.versions )
 
-    // convert parquet to csv
-    //PARQUET_TO_CSV( SEGGER_PREDICT.out.transcripts )
-    //ch_versions = ch_versions.mix( PARQUET_TO_CSV.out.versions )
-
     emit:
-
-    datasetdir     = SEGGER_CREATE_DATASET.out.datasetdir // channel: [ val(meta), [ datasetdir ] ]
-    trained_models = SEGGER_TRAIN.out.trained_models      // channel: [ val(meta), [ trained_models ] ]
-    benchmarks     = SEGGER_PREDICT.out.benchmarks        // channel: [ val(meta), [ benchmarks ] ]
-    //ch_transcripts = PARQUET_TO_CSV.out.transcripts_csv   // channel: [ val(meta), [ transcripts ] ]
-
-    versions       = ch_versions                          // channel: [ versions.yml ]
-
+    datasetdir     = SEGGER_CREATE_DATASET.out.datasetdir
+    trained_models = SEGGER_TRAIN.out.trained_models
+    benchmarks     = SEGGER_PREDICT.out.benchmarks
+    num_tokens     = SEGGER_CREATE_DATASET.out.num_tokens
+    versions       = ch_versions
 }
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

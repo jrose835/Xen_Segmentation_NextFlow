@@ -7,7 +7,7 @@ process SEGGER_CREATE_DATASET {
     tuple val(meta), path(base_dir)
 
     output:
-    tuple val(meta), path("${meta.id}") , emit: datasetdir
+    tuple val(meta), path("${meta.id}"), path("num_tx_tokens.txt") , emit: datasetdir
     path("versions.yml")                , emit: versions
 
     when:
@@ -21,6 +21,9 @@ process SEGGER_CREATE_DATASET {
     def args = task.ext.args ?: ''
     def prefix = task.ext.prefix ?: "${meta.id}"
     def script_path = "/workspace/segger_dev/src/segger/cli/create_dataset_fast.py"
+    
+    // Check if we should auto-detect or use manual value
+    def detect_tokens = params.segger_num_tx_tokens == 0 || params.segger_num_tx_tokens == null
 
     // check for platform values
     if ( !(params.format in ['xenium']) ) {
@@ -28,6 +31,26 @@ process SEGGER_CREATE_DATASET {
     }
 
     """
+    # Detect or use provided num_tx_tokens
+    if [ "${detect_tokens}" = "true" ]; then
+        echo "Auto-detecting num_tx_tokens from Xenium bundle..."
+        NUM_TX_TOKENS=\$(detect_num_tokens.py ${base_dir} --buffer 10)
+        
+        if [ -z "\$NUM_TX_TOKENS" ]; then
+            echo "Warning: Could not detect tokens, using default 313"
+            NUM_TX_TOKENS=313
+        fi
+    else
+        echo "Using manually specified num_tx_tokens: ${params.segger_num_tx_tokens}"
+        NUM_TX_TOKENS=${params.segger_num_tx_tokens}
+    fi
+    
+    echo "Using num_tx_tokens: \$NUM_TX_TOKENS"
+    
+    # Save for downstream processes
+    echo "\$NUM_TX_TOKENS" > num_tx_tokens.txt
+    
+    # Create the dataset
     python3 ${script_path} \\
         --base_dir ${base_dir} \\
         --data_dir ${prefix} \\
@@ -47,6 +70,7 @@ process SEGGER_CREATE_DATASET {
     def prefix = task.ext.prefix ?: "${meta.id}"
     """
     mkdir -p ${prefix}/
+    echo "313" > num_tx_tokens.txt
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

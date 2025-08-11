@@ -6,7 +6,7 @@ process SEGGER_PREDICT {
     memory "${params.seggerPredictMem} GB"
 
     input:
-    tuple val(meta), path(segger_dataset)
+    tuple val(meta), path(segger_dataset), path(num_tokens_file)
     path(models_dir)
     path(transcripts)
 
