@@ -128,7 +128,6 @@ workflow SEGGER_CREATE_TRAIN_PREDICT {
     datasetdir     = SEGGER_CREATE_DATASET.out.datasetdir
     trained_models = SEGGER_TRAIN.out.trained_models
     benchmarks     = SEGGER_PREDICT.out.benchmarks
-    num_tokens     = SEGGER_CREATE_DATASET.out.num_tokens
     versions       = ch_versions
 }
 /*
