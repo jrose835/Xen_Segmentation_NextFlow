@@ -55,9 +55,14 @@ process SEGGER_CREATE_DATASET {
         --base_dir ${base_dir} \\
         --data_dir ${prefix} \\
         --sample_type ${params.format} \\
+        --k_bd ${params.segger_k_bd} \\
+        --dist_bd ${params.segger_dist_bd} \\
+        --k_tx ${params.segger_k_tx} \\
+        --dist_tx ${params.segger_dist_tx} \\
+        --frac ${params.segger_frac}
         --n_workers ${task.cpus} \\
-        --tile_width ${task.ext.tile_width} \\
-        --tile_height ${task.ext.tile_height} \\
+        --tile_width ${params.segger_tile_width} \\
+        --tile_height ${params.segger_tile_height} \\
         ${args}
 
     cat <<-END_VERSIONS > versions.yml

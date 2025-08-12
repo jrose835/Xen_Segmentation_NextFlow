@@ -34,9 +34,9 @@ process SEGGER_TRAIN {
         --models_dir ${prefix}_trained_models \\
         --sample_tag ${prefix} \\
         --num_workers ${task.cpus} \\
-        --batch_size ${task.ext.batch_size} \\
-        --max_epochs ${task.ext.max_epochs} \\
-        --devices ${task.ext.devices} \\
+        --batch_size ${params.segger_batch_size} \\
+        --max_epochs ${params.segger_max_epochs} \\
+        --devices ${params.segger_devices} \\
         --accelerator ${params.segger_accelerator} \\
         --num_tx_tokens \$NUM_TX_TOKENS \\
         ${args}

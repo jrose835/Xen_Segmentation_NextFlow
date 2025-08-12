@@ -34,8 +34,8 @@ process SEGGER_PREDICT {
         --transcripts_file ${transcripts} \\
         --benchmarks_dir ${prefix}_benchmarks_dir \\
         --num_workers ${task.cpus} \\
-        --batch_size ${task.ext.batch_size} \\
-        --use_cc ${task.ext.cc_analysis} \\
+        --batch_size ${params.segger_batch_size} \\
+        --use_cc ${params.segger_cc_analysis} \\
         --knn_method ${params.segger_knn_method} \\
         ${args}
 
