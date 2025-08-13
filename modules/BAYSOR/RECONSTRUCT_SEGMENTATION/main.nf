@@ -5,8 +5,7 @@
     RECONSTRUCT_SEGMENTATION
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
-// TODO
-// Change inputs for meta map
+
 process RECONSTRUCT_SEGMENTATION {
   tag "$meta.id"
 
@@ -14,7 +13,7 @@ process RECONSTRUCT_SEGMENTATION {
    tuple val(meta), path(csv_files), path(json_files)
 
   output:
-   tuple path("merged.csv"), path("merged.json"), emit: complete_segmentation 
+   tuple val(meta), path("merged.csv"), path("merged.json"), emit: complete_segmentation 
 
   script:
   """
