@@ -123,11 +123,11 @@ process RECONSTRUCT_SEGMENTATION {
           if [ -s "temp_json_\${i}.json" ]; then
               content=\$(cat "temp_json_\${i}.json")
               if [ -n "\$content" ]; then
-                  if [ "\$first_entry" = false ]; then
-                      echo ',' >> merged.json
-                  fi
-                  cat "temp_json_\${i}.json" >> merged.json
-                  first_entry=false
+              if [ "\$first_entry" = false ]; then
+                  echo ',' >> merged.json
+              fi
+              cat "temp_json_\${i}.json" >> merged.json
+              first_entry=false
               fi
           fi
       fi
@@ -138,6 +138,6 @@ process RECONSTRUCT_SEGMENTATION {
   # Clean up temp files
   rm -f temp_json_*.json
   
-  echo "Reconstruction complete >&2
+  echo "Reconstruction complete" >&2
   """
 }
