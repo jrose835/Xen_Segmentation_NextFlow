@@ -13,7 +13,7 @@ process RECONSTRUCT_SEGMENTATION {
    tuple val(meta), path(csv_files), path(json_files)
 
   output:
-   tuple val(meta), path("merged.csv"), path("merged.json"), emit: complete_segmentation 
+   tuple val(meta), path("merged_validated.csv"), path("merged.json"), emit: complete_segmentation 
 
   script:
   """
@@ -123,11 +123,11 @@ process RECONSTRUCT_SEGMENTATION {
           if [ -s "temp_json_\${i}.json" ]; then
               content=\$(cat "temp_json_\${i}.json")
               if [ -n "\$content" ]; then
-              if [ "\$first_entry" = false ]; then
-                  echo ',' >> merged.json
-              fi
-              cat "temp_json_\${i}.json" >> merged.json
-              first_entry=false
+                  if [ "\$first_entry" = false ]; then
+                      echo ',' >> merged.json
+                  fi
+                  cat "temp_json_\${i}.json" >> merged.json
+                  first_entry=false
               fi
           fi
       fi
@@ -139,5 +139,18 @@ process RECONSTRUCT_SEGMENTATION {
   rm -f temp_json_*.json
   
   echo "Reconstruction complete" >&2
+  
+  # Validate that all cells in CSV have corresponding polygons in JSON
+  # This removes transcript rows for cells without polygons
+  validate_csv.py \\
+      --csv merged.csv \\
+      --json merged.json \\
+      --output merged_validated.csv \\
+      --cell-column cell
+  
+  # Remove the unvalidated merged.csv to save space
+  rm -f merged.csv
+  
+  echo "Validation and reconstruction fully complete" >&2
   """
 }
