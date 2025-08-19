@@ -52,29 +52,32 @@ process RECONSTRUCT_SEGMENTATION {
       
       echo "Processing tile \$i: \$csv_file with offset \$offset" >&2
       
+      # ALWAYS calculate the max cell ID from CSV file regardless of JSON content
+      # This ensures offset increments correctly even for empty JSON files
+      cell_count=\$(tail -n +2 "\$csv_file" | awk -F',' -v col="\$cell_col" '{print \$col}' | sed 's/.*-//' | grep -E '^[0-9]+\$' | sort -nu | tail -1)
+      if [ -z "\$cell_count" ]; then
+          cell_count=0
+      fi
+      echo "Tile \$i has max cell ID: \$cell_count" >&2
+      
       if [ "\$first_file" = true ]; then
-          # First file - no offset needed
+          # First file - no offset needed for data, but still calculate offset for next file
           first_file=false
           tail -n +2 "\$csv_file" >> merged.csv
           
-          # Extract JSON content - sed will produce empty output for empty arrays, which is fine
-          sed -E '
-              s#^\\{"geometries":\\[##;
-              s#\\],"type" *: *"GeometryCollection"\\}\$##;
-          ' "\$json_file" > temp_json_\${i}.json
-          
-          # Count cells in this tile for next offset
-          # Count unique cell IDs (excluding header and handling the PREFIX-ID format)
-          # Use the dynamically determined column index
-          cell_count=\$(tail -n +2 "\$csv_file" | awk -F',' -v col="\$cell_col" '{print \$col}' | sed 's/.*-//' | sort -nu | tail -1)
-          if [ -z "\$cell_count" ]; then
-              cell_count=0
+          # Extract JSON content - handle empty files gracefully
+          if [ -s "\$json_file" ]; then
+              sed -E '
+                  s#^\\{"geometries":\\[##;
+                  s#\\],"type" *: *"GeometryCollection"\\}\$##;
+              ' "\$json_file" > temp_json_\${i}.json
+          else
+              echo "Empty JSON file for tile \$i, creating empty temp file" >&2
+              touch temp_json_\${i}.json
           fi
-          echo "Tile \$i has max cell ID: \$cell_count" >&2
-          offset=\$((offset + cell_count))
           
       else
-          # Subsequent files - apply offset
+          # Subsequent files - apply offset to CSV data
           
           # Process CSV with offset
           tail -n +2 "\$csv_file" | awk -F',' -v offset="\$offset" -v col="\$cell_col" '
@@ -101,16 +104,12 @@ process RECONSTRUCT_SEGMENTATION {
           
           # Process JSON with offset using the Python script
           offset_json_cells.py "\$json_file" "temp_json_\${i}.json" \$offset
-          
-          # Update offset for next tile
-          # Count cells in this tile using dynamically determined column
-          cell_count=\$(tail -n +2 "\$csv_file" | awk -F',' -v col="\$cell_col" '{print \$col}' | sed 's/.*-//' | sort -nu | tail -1)
-          if [ -z "\$cell_count" ]; then
-              cell_count=0
-          fi
-          echo "Tile \$i has max cell ID: \$cell_count" >&2
-          offset=\$((offset + cell_count))
       fi
+      
+      # Update offset for next tile using the cell count we calculated
+      # This happens AFTER processing, so the offset is ready for the next tile
+      offset=\$((offset + cell_count))
+      echo "Next offset will be: \$offset" >&2
   done
   
   # Merge all JSON files into final GeometryCollection

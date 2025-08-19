@@ -3,11 +3,13 @@
 """
 Script to add an offset to cell IDs in a Baysor JSON geometry file.
 Used during reconstruction of segmentation from multiple tiles.
+Enhanced with better empty file handling.
 """
 
 import json
 import sys
 import argparse
+import os
 
 def offset_json_cells(input_file, output_file, offset):
     """
@@ -19,8 +21,40 @@ def offset_json_cells(input_file, output_file, offset):
         offset: Integer offset to add to cell IDs
     """
     try:
+        # Check if file exists and has content
+        if not os.path.exists(input_file):
+            print(f"Error: Input file {input_file} not found", file=sys.stderr)
+            sys.exit(1)
+        
+        # Check file size
+        file_size = os.path.getsize(input_file)
+        if file_size == 0:
+            print(f"Info: Input file {input_file} is empty", file=sys.stderr)
+            # Write empty output
+            with open(output_file, 'w') as out:
+                out.write("")
+            return
+        
+        # Read and parse JSON
         with open(input_file, 'r') as f:
-            data = json.load(f)
+            content = f.read().strip()
+        
+        # Handle empty or whitespace-only files
+        if not content:
+            print(f"Info: Input file {input_file} contains only whitespace", file=sys.stderr)
+            with open(output_file, 'w') as out:
+                out.write("")
+            return
+        
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError as e:
+            print(f"Error: Failed to parse JSON from {input_file}: {e}", file=sys.stderr)
+            print(f"File content preview: {content[:100]}...", file=sys.stderr)
+            # For malformed JSON, write empty output instead of crashing
+            with open(output_file, 'w') as out:
+                out.write("")
+            return
         
         if 'geometries' not in data:
             print(f"Warning: No 'geometries' key found in {input_file}", file=sys.stderr)
@@ -56,13 +90,10 @@ def offset_json_cells(input_file, output_file, offset):
                         out.write(',\n')
                     json.dump(geom, out)
         else:
-            # Write empty file if no geometries
+            # Write empty file if no geometries after processing
             with open(output_file, 'w') as out:
                 out.write("")
                 
-    except json.JSONDecodeError as e:
-        print(f"Error: Failed to parse JSON from {input_file}: {e}", file=sys.stderr)
-        sys.exit(1)
     except FileNotFoundError:
         print(f"Error: Input file {input_file} not found", file=sys.stderr)
         sys.exit(1)
