@@ -17,6 +17,7 @@ include { CALC_SPLITS              } from './modules/CALC_SPLITS/main'
 include { FILTER_TRANSCRIPTS       } from './modules/BAYSOR/FILTER_TRANSCRIPTS/main'
 include { BAYSOR_RUN               } from './modules/BAYSOR/BAYSOR_RUN/main'
 include { RECONSTRUCT_SEGMENTATION } from './modules/BAYSOR/RECONSTRUCT_SEGMENTATION/main'
+include { FILTER_POLYGONS          } from './modules/BAYSOR/FILTER_POLYGONS'
 
 //Segger
 include { SEGGER_TRAIN             } from './modules/segger/train/main'
@@ -66,9 +67,12 @@ workflow BAYSOR_PARALLEL {
         // Reconstruct segmentation files
         RECONSTRUCT_SEGMENTATION(merged_inputs)
 
+        // Filter polygons to only include cells present in the CSV
+        FILTER_POLYGONS(RECONSTRUCT_SEGMENTATION.out.complete_segmentation)
+
 
     emit:
-    segmentation = RECONSTRUCT_SEGMENTATION.out.complete_segmentation
+    segmentation = FILTER_POLYGONS.out.filtered_segmentation
 
 
 }
