@@ -12,8 +12,8 @@ This process avoids those issues
 process FILTER_POLYGONS {
     tag "$meta.id"
     
-    cpus 4
-    memory "16 GB"
+    cpus params.filterPolyCPUs
+    memory "${params.filterPolyMem} GB"
 
     input:
     tuple val(meta), path(segmentation_csv), path(polygons_json)
