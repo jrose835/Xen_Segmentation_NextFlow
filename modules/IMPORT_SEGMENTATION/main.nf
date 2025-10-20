@@ -16,7 +16,7 @@ process IMPORT_SEGMENTATION {
 
     input:
     tuple val(meta), path(xenium_bundle)
-    tuple path(segmentation), path(polygons)
+    tuple val(meta), path(segmentation), path(polygons)
 
     output:
     path "${params.id}_baysor"

@@ -17,6 +17,7 @@ include { CALC_SPLITS              } from './modules/CALC_SPLITS/main'
 include { FILTER_TRANSCRIPTS       } from './modules/BAYSOR/FILTER_TRANSCRIPTS/main'
 include { BAYSOR_RUN               } from './modules/BAYSOR/BAYSOR_RUN/main'
 include { RECONSTRUCT_SEGMENTATION } from './modules/BAYSOR/RECONSTRUCT_SEGMENTATION/main'
+include { FILTER_POLYGONS          } from './modules/BAYSOR/FILTER_POLYGONS'
 
 //Segger
 include { SEGGER_TRAIN             } from './modules/segger/train/main'
@@ -66,9 +67,12 @@ workflow BAYSOR_PARALLEL {
         // Reconstruct segmentation files
         RECONSTRUCT_SEGMENTATION(merged_inputs)
 
+        // Filter polygons to only include cells present in the CSV
+        FILTER_POLYGONS(RECONSTRUCT_SEGMENTATION.out.complete_segmentation)
+
 
     emit:
-    segmentation = RECONSTRUCT_SEGMENTATION.out.complete_segmentation
+    segmentation = FILTER_POLYGONS.out.filtered_segmentation
 
 
 }
@@ -85,12 +89,10 @@ workflow BAYSOR_PARALLEL {
 workflow SEGGER_CREATE_TRAIN_PREDICT {
 
     take:
-
     ch_basedir              // channel: [ val(meta), [ "basedir" ] ]
     ch_transcripts_parquet  // channel: [ val(meta), [bundle + "/transcripts.parquet"]]
 
     main:
-
     ch_versions = Channel.empty()
 
     // create dataset
@@ -108,12 +110,16 @@ workflow SEGGER_CREATE_TRAIN_PREDICT {
     ch_just_transcripts_parquet = ch_transcripts_parquet.map {
                 _meta, transcripts -> return [ transcripts ]
     }
-    SEGGER_PREDICT ( SEGGER_CREATE_DATASET.out.datasetdir, ch_just_trained_models, ch_just_transcripts_parquet )
+    
+    SEGGER_PREDICT ( 
+        SEGGER_CREATE_DATASET.out.datasetdir, 
+        ch_just_trained_models, 
+        ch_just_transcripts_parquet 
+    )
     ch_versions = ch_versions.mix ( SEGGER_PREDICT.out.versions )
 
     // Extract the segger transcripts parquet from the nested directory structure
     ch_segger_transcripts = SEGGER_PREDICT.out.transcripts.map { meta, transcripts_files ->
-        // Handle the glob pattern result - get the first (and should be only) file
         def transcript_file = transcripts_files instanceof List ? transcripts_files[0] : transcripts_files
         return [ meta, transcript_file ]
     }
@@ -122,19 +128,11 @@ workflow SEGGER_CREATE_TRAIN_PREDICT {
     SEGGER_EXPLORER ( ch_segger_transcripts, ch_basedir )
     ch_versions = ch_versions.mix ( SEGGER_EXPLORER.out.versions )
 
-    // convert parquet to csv
-    //PARQUET_TO_CSV( SEGGER_PREDICT.out.transcripts )
-    //ch_versions = ch_versions.mix( PARQUET_TO_CSV.out.versions )
-
     emit:
-
-    datasetdir     = SEGGER_CREATE_DATASET.out.datasetdir // channel: [ val(meta), [ datasetdir ] ]
-    trained_models = SEGGER_TRAIN.out.trained_models      // channel: [ val(meta), [ trained_models ] ]
-    benchmarks     = SEGGER_PREDICT.out.benchmarks        // channel: [ val(meta), [ benchmarks ] ]
-    //ch_transcripts = PARQUET_TO_CSV.out.transcripts_csv   // channel: [ val(meta), [ transcripts ] ]
-
-    versions       = ch_versions                          // channel: [ versions.yml ]
-
+    datasetdir     = SEGGER_CREATE_DATASET.out.datasetdir
+    trained_models = SEGGER_TRAIN.out.trained_models
+    benchmarks     = SEGGER_PREDICT.out.benchmarks
+    versions       = ch_versions
 }
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -143,23 +141,28 @@ workflow SEGGER_CREATE_TRAIN_PREDICT {
 */
 
 workflow {
-
     /*
     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         INPUTS
     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     */
-
+    
     // Validate that the input and workflow parameters are specified
-
     if (!params.input) {
         error "The --input parameter is required but was not specified. Please provide a valid input path."
     }
-
+    
     if (!params.runRanger && !params.runBaysor && !params.runSegger) {
         error "No method set. Please set either runRanger or runBaysor to true."
     }
-
+    
+    // If Ranger is not running but Baysor is, force baysor_from_resegment to false
+    def effective_baysor_from_resegment = params.baysor_from_resegment
+    if (!params.runRanger && params.runBaysor && params.baysor_from_resegment) {
+        log.warn "Warning: baysor_from_resegment is set to true but runRanger is false. Setting baysor_from_resegment to false."
+        effective_baysor_from_resegment = false
+    }
+    
     // Set channels
     //TODO: Make sure this isn't broken if file has additional metadata columns
     Channel
@@ -168,7 +171,7 @@ workflow {
             meta, bundle, image, splits -> return [ [id: meta.id], bundle, image, splits ]
         }
         .set { ch_samplesheet }
-
+    
     // get samplesheet fields
     ch_bundle_path = ch_samplesheet.map { meta, bundle, _image , _splits->
         return [ meta, file(bundle)]
@@ -179,42 +182,55 @@ workflow {
         def transcripts_parquet = file(bundle.replaceFirst(/\/$/, '') + "/transcripts.parquet")
         return [ meta, transcripts_parquet ]
     }
-
+    
     // get user defined splits
     if (params.preset_splits) {
         ch_splits = ch_samplesheet.map { meta, _bundle, _image , splits->
             return [ meta, file(splits)]
         }
     }
-
+    
     /*
     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         Workflow
     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     */
-
+    
     if ( params.runRanger ) {
         // Run the RESEGMENT_10X process
         RESEGMENT_10X(ch_bundle_path)
-        ch_transcripts_parquet = RESEGMENT_10X.out.parquet
-        ch_bundle_path = RESEGMENT_10X.out.bundle
+        ch_transcripts_parquet_ranger = RESEGMENT_10X.out.parquet
+        ch_bundle_path_ranger = RESEGMENT_10X.out.bundle
     }
-
+    
     if ( params.runBaysor ) {
-        // Calculate splits for tiling transcript file
-        if (!params.preset_splits) {
-            CALC_SPLITS(ch_transcripts_parquet)
-            ch_splits = CALC_SPLITS.out.ch_splits_csv
+        if (effective_baysor_from_resegment) {         
+            // Calculate splits for tiling transcript file
+            if (!params.preset_splits) {
+                CALC_SPLITS(ch_transcripts_parquet_ranger)
+                ch_splits = CALC_SPLITS.out.ch_splits_csv
+            }
+            //Baysor segmentation (using parallel processing workflow)
+            BAYSOR_PARALLEL(ch_transcripts_parquet_ranger, ch_splits)
+            
+            //Importing baysor segmentation into new Xenium bundle
+            IMPORT_SEGMENTATION(ch_bundle_path_ranger, BAYSOR_PARALLEL.out.segmentation)
         }
-        //Baysor segmentation (using parallel processing workflow)
-        BAYSOR_PARALLEL(ch_transcripts_parquet, ch_splits)
-
-        //Importing baysor segmentation into new Xenium bundle
-        IMPORT_SEGMENTATION(ch_bundle_path, BAYSOR_PARALLEL.out.segmentation)
+        else {
+            // Calculate splits for tiling transcript file
+            if (!params.preset_splits) {
+                CALC_SPLITS(ch_transcripts_parquet)
+                ch_splits = CALC_SPLITS.out.ch_splits_csv
+            }
+            //Baysor segmentation (using parallel processing workflow)
+            BAYSOR_PARALLEL(ch_transcripts_parquet, ch_splits)
+            
+            //Importing baysor segmentation into new Xenium bundle
+            IMPORT_SEGMENTATION(ch_bundle_path, BAYSOR_PARALLEL.out.segmentation)
+        }
     }
     
     if (params.runSegger ) {
         SEGGER_CREATE_TRAIN_PREDICT (ch_bundle_path, ch_transcripts_parquet)
     }
-
 }
