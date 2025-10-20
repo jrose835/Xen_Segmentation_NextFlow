@@ -40,16 +40,27 @@ process RECONSTRUCT_SEGMENTATION {
   
   # Process first file (no offset needed)
   echo "Processing first file: \${csv_files[0]}" >&2
-  
+
   # Copy header from first CSV
   head -n 1 "\${csv_files[0]}" > merged.csv
-  
+
+  # Extract the cell ID prefix from the first file to use as the canonical prefix
+  # This ensures all cells have the same prefix (required by Xenium Ranger)
+  canonical_prefix=\$(tail -n +2 "\${csv_files[0]}" | awk -F',' -v col="\$cell_col" '{print \$col}' | grep -v "^[[:space:]]*\$" | grep -v "^NA\$" | head -1 | sed 's/-[0-9]*\$//')
+
+  if [ -z "\$canonical_prefix" ]; then
+      echo "Error: Could not extract cell ID prefix from first file" >&2
+      exit 1
+  fi
+
+  echo "Using canonical cell ID prefix: \$canonical_prefix" >&2
+
   # Process each CSV/JSON pair
   first_file=true
   for i in "\${!csv_files[@]}"; do
       csv_file="\${csv_files[i]}"
       json_file="\${json_files[i]}"
-      
+
       echo "Processing tile \$i: \$csv_file with offset \$offset" >&2
       
       # ALWAYS calculate the max cell ID from CSV file regardless of JSON content
@@ -77,10 +88,10 @@ process RECONSTRUCT_SEGMENTATION {
           fi
           
       else
-          # Subsequent files - apply offset to CSV data
-          
-          # Process CSV with offset
-          tail -n +2 "\$csv_file" | awk -F',' -v offset="\$offset" -v col="\$cell_col" '
+          # Subsequent files - apply offset to CSV data and normalize prefix
+
+          # Process CSV with offset and replace prefix with canonical prefix
+          tail -n +2 "\$csv_file" | awk -F',' -v offset="\$offset" -v col="\$cell_col" -v canonical_prefix="\$canonical_prefix" '
           BEGIN {OFS=","}
           {
               if (\$col != "" && \$col != "NA" && \$col != "null") {
@@ -89,14 +100,9 @@ process RECONSTRUCT_SEGMENTATION {
                   if (n >= 2) {
                       # Extract the numeric ID (last part after dash)
                       old_id = parts[n]
-                      # Reconstruct prefix (everything before last dash)
-                      prefix = parts[1]
-                      for (j = 2; j < n; j++) {
-                          prefix = prefix "-" parts[j]
-                      }
-                      # Add offset to the numeric ID
+                      # Add offset to the numeric ID and use canonical prefix
                       new_id = old_id + offset
-                      \$col = prefix "-" new_id
+                      \$col = canonical_prefix "-" new_id
                   }
               }
               print
