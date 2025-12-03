@@ -59,7 +59,7 @@ process SEGGER_CREATE_DATASET {
         --dist_bd ${params.segger_dist_bd} \\
         --k_tx ${params.segger_k_tx} \\
         --dist_tx ${params.segger_dist_tx} \\
-        --frac ${params.segger_frac}
+        --frac ${params.segger_frac} \\
         --n_workers ${task.cpus} \\
         --tile_width ${params.segger_tile_width} \\
         --tile_height ${params.segger_tile_height} \\
