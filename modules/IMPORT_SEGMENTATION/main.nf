@@ -5,8 +5,6 @@
     IMPORT_SEGMENTATION
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
-// TODO
-// Change inputs for meta map
 
 process IMPORT_SEGMENTATION {
     tag "$meta.id"
@@ -19,11 +17,13 @@ process IMPORT_SEGMENTATION {
     tuple val(meta), path(segmentation), path(polygons)
 
     output:
-    path "${params.id}_baysor"
+    tuple val(meta), path("${prefix}"), emit: bundle
 
     script:
+    def suffix = task.ext.suffix ?: '_baysor'
+    prefix = "${meta.id}${suffix}"
     """
-    xeniumranger import-segmentation --id="${params.id}_baysor" \
+    xeniumranger import-segmentation --id="${prefix}" \
                                  --xenium-bundle=${xenium_bundle} \
                                  --transcript-assignment=${segmentation} \
                                  --viz-polygons=${polygons} \
