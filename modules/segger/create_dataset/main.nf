@@ -65,6 +65,33 @@ process SEGGER_CREATE_DATASET {
         --tile_height ${params.segger_tile_height} \\
         ${args}
 
+    # Remove tiles with dimensions below minimum threshold to prevent empty edge errors
+    # Tiles at tissue boundaries can be very small (e.g., h=1) causing KNN edge computation to fail
+    MIN_DIM=${params.segger_min_tile_dim}
+    echo "Filtering out tiles with width or height < \${MIN_DIM} pixels..."
+    REMOVED=0
+    for tiledir in ${prefix}/*/processed; do
+        if [ -d "\$tiledir" ]; then
+            for f in "\$tiledir"/tiles_*.pt; do
+                [ -e "\$f" ] || continue
+                fname=\$(basename "\$f")
+                # Extract width and height from filename pattern: tiles_x=N_y=N_w=N_h=N.pt
+                w=\$(echo "\$fname" | sed -n 's/.*_w=\\([0-9]*\\)_.*/\\1/p')
+                h=\$(echo "\$fname" | sed -n 's/.*_h=\\([0-9]*\\)\\.pt/\\1/p')
+                if [ -n "\$w" ] && [ -n "\$h" ]; then
+                    if [ "\$w" -lt "\$MIN_DIM" ] || [ "\$h" -lt "\$MIN_DIM" ]; then
+                        rm "\$f"
+                        # Also remove corresponding raw file if it exists
+                        rawfile="\${tiledir%/processed}/raw/\$fname"
+                        [ -f "\$rawfile" ] && rm "\$rawfile"
+                        REMOVED=\$((REMOVED + 1))
+                    fi
+                fi
+            done
+        fi
+    done
+    echo "Removed \${REMOVED} tiles with dimensions below \${MIN_DIM} pixels"
+
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
         segger: 0.1.0

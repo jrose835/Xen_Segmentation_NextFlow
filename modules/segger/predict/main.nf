@@ -37,6 +37,10 @@ process SEGGER_PREDICT {
         --batch_size ${params.segger_batch_size} \\
         --use_cc ${params.segger_cc_analysis} \\
         --knn_method ${params.segger_knn_method} \\
+        --k_bd ${params.segger_k_bd} \\
+        --dist_bd ${params.segger_dist_bd} \\
+        --k_tx ${params.segger_k_tx} \\
+        --dist_tx ${params.segger_dist_tx} \\
         ${args}
 
     cat <<-END_VERSIONS > versions.yml

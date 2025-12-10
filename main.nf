@@ -104,17 +104,18 @@ workflow SEGGER_CREATE_TRAIN_PREDICT {
     ch_versions = ch_versions.mix ( SEGGER_TRAIN.out.versions )
 
     // run prediction with the trained models
-    ch_just_trained_models = SEGGER_TRAIN.out.trained_models.map {
-                _meta, models -> return [ models ]
-    }
-    ch_just_transcripts_parquet = ch_transcripts_parquet.map {
-                _meta, transcripts -> return [ transcripts ]
-    }
-    
-    SEGGER_PREDICT ( 
-        SEGGER_CREATE_DATASET.out.datasetdir, 
-        ch_just_trained_models, 
-        ch_just_transcripts_parquet 
+    // Join all channels by metadata to ensure correct model/dataset/transcripts matching
+    ch_predict_input = SEGGER_CREATE_DATASET.out.datasetdir
+        .join(SEGGER_TRAIN.out.trained_models, by: 0)
+        .join(ch_transcripts_parquet, by: 0)
+        .map { meta, dataset, num_tokens, models, transcripts ->
+            return [ meta, dataset, num_tokens, models, transcripts ]
+        }
+
+    SEGGER_PREDICT (
+        ch_predict_input.map { meta, dataset, num_tokens, _models, _transcripts -> [ meta, dataset, num_tokens ] },
+        ch_predict_input.map { _meta, _dataset, _num_tokens, models, _transcripts -> models },
+        ch_predict_input.map { _meta, _dataset, _num_tokens, _models, transcripts -> transcripts }
     )
     ch_versions = ch_versions.mix ( SEGGER_PREDICT.out.versions )
 
