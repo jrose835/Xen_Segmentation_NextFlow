@@ -1,0 +1,9 @@
+results
+work
+.nextflow.log.*
+.nextflow.log
+.nextflow
+smalltest
+smalltest_current
+copy_nf.sh
+example.json

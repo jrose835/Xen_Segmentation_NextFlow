@@ -251,7 +251,7 @@ workflow {
     }
     
     if ( params.runBaysor ) {
-        if (effective_baysor_from_resegment) {         
+        if (effective_baysor_from_resegment) {
             // Calculate splits for tiling transcript file
             if (!params.preset_splits) {
                 CALC_SPLITS(ch_transcripts_parquet_ranger)
@@ -259,9 +259,15 @@ workflow {
             }
             //Baysor segmentation (using parallel processing workflow)
             BAYSOR_PARALLEL(ch_transcripts_parquet_ranger, ch_splits)
-            
+
+            // Join channels by metadata to ensure correct bundle-segmentation pairing
+            ch_baysor_import_input = ch_bundle_path_ranger.join(BAYSOR_PARALLEL.out.segmentation, by: 0)
+
             //Importing baysor segmentation into new Xenium bundle
-            IMPORT_SEGMENTATION(ch_bundle_path_ranger, BAYSOR_PARALLEL.out.segmentation)
+            IMPORT_SEGMENTATION(
+                ch_baysor_import_input.map { meta, bundle, csv, geojson -> tuple(meta, bundle) },
+                ch_baysor_import_input.map { meta, bundle, csv, geojson -> tuple(meta, csv, geojson) }
+            )
         }
         else {
             // Calculate splits for tiling transcript file
@@ -271,9 +277,15 @@ workflow {
             }
             //Baysor segmentation (using parallel processing workflow)
             BAYSOR_PARALLEL(ch_transcripts_parquet, ch_splits)
-            
+
+            // Join channels by metadata to ensure correct bundle-segmentation pairing
+            ch_baysor_import_input = ch_bundle_path.join(BAYSOR_PARALLEL.out.segmentation, by: 0)
+
             //Importing baysor segmentation into new Xenium bundle
-            IMPORT_SEGMENTATION(ch_bundle_path, BAYSOR_PARALLEL.out.segmentation)
+            IMPORT_SEGMENTATION(
+                ch_baysor_import_input.map { meta, bundle, csv, geojson -> tuple(meta, bundle) },
+                ch_baysor_import_input.map { meta, bundle, csv, geojson -> tuple(meta, csv, geojson) }
+            )
         }
     }
     
@@ -286,15 +298,27 @@ workflow {
             // Run proseg on resegmented transcripts
             PROSEG_RUN(ch_bundle_path_ranger, ch_transcripts_parquet_ranger)
 
+            // Join channels by metadata to ensure correct bundle-segmentation pairing
+            ch_proseg_import_input = ch_bundle_path_ranger.join(PROSEG_RUN.out.segmentation, by: 0)
+
             // Import proseg segmentation into new Xenium bundle
-            IMPORT_SEGMENTATION_PROSEG(ch_bundle_path_ranger, PROSEG_RUN.out.segmentation)
+            IMPORT_SEGMENTATION_PROSEG(
+                ch_proseg_import_input.map { meta, bundle, csv, geojson -> tuple(meta, bundle) },
+                ch_proseg_import_input.map { meta, bundle, csv, geojson -> tuple(meta, csv, geojson) }
+            )
         }
         else {
             // Run proseg on original transcripts
             PROSEG_RUN(ch_bundle_path, ch_transcripts_parquet)
 
+            // Join channels by metadata to ensure correct bundle-segmentation pairing
+            ch_proseg_import_input = ch_bundle_path.join(PROSEG_RUN.out.segmentation, by: 0)
+
             // Import proseg segmentation into new Xenium bundle
-            IMPORT_SEGMENTATION_PROSEG(ch_bundle_path, PROSEG_RUN.out.segmentation)
+            IMPORT_SEGMENTATION_PROSEG(
+                ch_proseg_import_input.map { meta, bundle, csv, geojson -> tuple(meta, bundle) },
+                ch_proseg_import_input.map { meta, bundle, csv, geojson -> tuple(meta, csv, geojson) }
+            )
         }
     }
 }
