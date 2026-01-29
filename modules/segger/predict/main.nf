@@ -9,10 +9,12 @@ process SEGGER_PREDICT {
     tuple val(meta), path(segger_dataset), path(num_tokens_file)
     path(models_dir)
     path(transcripts)
+    path(predict_script)
 
     output:
     tuple val(meta), path("${meta.id}_benchmarks_dir")                                  , emit: benchmarks
     tuple val(meta), path("${meta.id}_benchmarks_dir/*/segger_transcripts.parquet")     , emit: transcripts
+    tuple val(meta), path("${meta.id}_benchmarks_dir/*/segger_cell_boundaries.parquet") , emit: cell_boundaries, optional: true
     path("versions.yml")                                                                , emit: versions
 
     when:
@@ -25,10 +27,10 @@ process SEGGER_PREDICT {
 
     def args = task.ext.args ?: ''
     def prefix = task.ext.prefix ?: "${meta.id}"
-    def script_path = "/workspace/segger_dev/src/segger/cli/predict_fast.py"
+    def save_masks_flag = params.segger_save_cell_masks ? '--save_cell_masks' : ''
 
     """
-    python3 ${script_path} \\
+    python3 ${predict_script} \\
         --models_dir ${models_dir} \\
         --segger_data_dir ${segger_dataset} \\
         --transcripts_file ${transcripts} \\
@@ -41,6 +43,7 @@ process SEGGER_PREDICT {
         --dist_bd ${params.segger_dist_bd} \\
         --k_tx ${params.segger_k_tx} \\
         --dist_tx ${params.segger_dist_tx} \\
+        ${save_masks_flag} \\
         ${args}
 
     cat <<-END_VERSIONS > versions.yml

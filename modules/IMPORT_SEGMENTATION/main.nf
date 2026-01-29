@@ -13,8 +13,8 @@ process IMPORT_SEGMENTATION {
     memory "${params.rangerimportMem} GB"
 
     input:
-    tuple val(meta), path(xenium_bundle)
-    tuple val(meta), path(segmentation), path(polygons)
+    // Single tuple input ensures bundle and segmentation stay correctly paired
+    tuple val(meta), path(xenium_bundle), path(segmentation), path(polygons)
 
     output:
     tuple val(meta), path("${prefix}"), emit: bundle
