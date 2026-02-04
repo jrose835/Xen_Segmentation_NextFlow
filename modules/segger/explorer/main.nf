@@ -14,8 +14,7 @@ process SEGGER_EXPLORER {
     memory "${params.seggerExplorerMem} GB"
 
     input:
-    tuple val(meta), path(seg_df_parquet)
-    tuple val(meta), path(source_path)
+    tuple val(meta), path(seg_df_parquet), path(source_path)
 
     output:
     tuple val(meta), path("${meta.id}_xenium_explorer")                           , emit: explorer_dir

@@ -108,9 +108,6 @@ workflow SEGGER_CREATE_TRAIN_PREDICT {
     SEGGER_TRAIN ( SEGGER_CREATE_DATASET.out.datasetdir )
     ch_versions = ch_versions.mix ( SEGGER_TRAIN.out.versions )
 
-    // Custom predict script with save_cell_masks support
-    ch_predict_script = Channel.fromPath("${projectDir}/bin/predict_with_masks.py")
-
     // run prediction with the trained models
     // Join all channels by metadata to ensure correct model/dataset/transcripts matching
     ch_predict_input = SEGGER_CREATE_DATASET.out.datasetdir
@@ -120,11 +117,11 @@ workflow SEGGER_CREATE_TRAIN_PREDICT {
             return [ meta, dataset, num_tokens, models, transcripts ]
         }
 
+    // Pass all inputs as a single joined tuple to maintain sample synchronization
+    // The predict script is a static file, passed directly (not as a channel)
     SEGGER_PREDICT (
-        ch_predict_input.map { meta, dataset, num_tokens, _models, _transcripts -> [ meta, dataset, num_tokens ] },
-        ch_predict_input.map { _meta, _dataset, _num_tokens, models, _transcripts -> models },
-        ch_predict_input.map { _meta, _dataset, _num_tokens, _models, transcripts -> transcripts },
-        ch_predict_script
+        ch_predict_input,
+        file("${projectDir}/bin/predict_with_masks.py")
     )
     ch_versions = ch_versions.mix ( SEGGER_PREDICT.out.versions )
 
@@ -134,8 +131,11 @@ workflow SEGGER_CREATE_TRAIN_PREDICT {
         return [ meta, transcript_file ]
     }
 
+    // Join transcripts with basedir by metadata to ensure correct sample matching
+    ch_explorer_input = ch_segger_transcripts.join(ch_basedir, by: 0)
+
     // Run SEGGER_EXPLORER to create Xenium Explorer compatible files
-    SEGGER_EXPLORER ( ch_segger_transcripts, ch_basedir )
+    SEGGER_EXPLORER ( ch_explorer_input )
     ch_versions = ch_versions.mix ( SEGGER_EXPLORER.out.versions )
 
     emit:
