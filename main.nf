@@ -11,6 +11,7 @@ include { samplesheetToList        } from 'plugin/nf-schema'
 //XeniumRanger
 include { RESEGMENT_10X            } from './modules/RESEGMENT_10X/main'
 include { IMPORT_SEGMENTATION      } from './modules/IMPORT_SEGMENTATION/main'
+include { IMPORT_SEGMENTATION as IMPORT_SEGMENTATION_PROSEG } from './modules/IMPORT_SEGMENTATION/main'
 
 //Baysor
 include { CALC_SPLITS              } from './modules/CALC_SPLITS/main'
@@ -25,6 +26,10 @@ include { SEGGER_PREDICT           } from './modules/segger/predict/main'
 include { SEGGER_CREATE_DATASET    } from './modules/segger/create_dataset/main'
 include { SEGGER_EXPLORER          } from './modules/segger/explorer/main'
 // include { PARQUET_TO_CSV        } from './modules/spatialconverter/parquet_to_csv/main'
+
+//Proseg
+include { PROSEG                   } from './modules/proseg/preset/main'
+include { PROSEG2BAYSOR            } from './modules/proseg/proseg2baysor/main'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -104,17 +109,19 @@ workflow SEGGER_CREATE_TRAIN_PREDICT {
     ch_versions = ch_versions.mix ( SEGGER_TRAIN.out.versions )
 
     // run prediction with the trained models
-    ch_just_trained_models = SEGGER_TRAIN.out.trained_models.map {
-                _meta, models -> return [ models ]
-    }
-    ch_just_transcripts_parquet = ch_transcripts_parquet.map {
-                _meta, transcripts -> return [ transcripts ]
-    }
-    
-    SEGGER_PREDICT ( 
-        SEGGER_CREATE_DATASET.out.datasetdir, 
-        ch_just_trained_models, 
-        ch_just_transcripts_parquet 
+    // Join all channels by metadata to ensure correct model/dataset/transcripts matching
+    ch_predict_input = SEGGER_CREATE_DATASET.out.datasetdir
+        .join(SEGGER_TRAIN.out.trained_models, by: 0)
+        .join(ch_transcripts_parquet, by: 0)
+        .map { meta, dataset, num_tokens, models, transcripts ->
+            return [ meta, dataset, num_tokens, models, transcripts ]
+        }
+
+    // Pass all inputs as a single joined tuple to maintain sample synchronization
+    // The predict script is a static file, passed directly (not as a channel)
+    SEGGER_PREDICT (
+        ch_predict_input,
+        file("${projectDir}/bin/predict_with_masks.py")
     )
     ch_versions = ch_versions.mix ( SEGGER_PREDICT.out.versions )
 
@@ -124,8 +131,11 @@ workflow SEGGER_CREATE_TRAIN_PREDICT {
         return [ meta, transcript_file ]
     }
 
+    // Join transcripts with basedir by metadata to ensure correct sample matching
+    ch_explorer_input = ch_segger_transcripts.join(ch_basedir, by: 0)
+
     // Run SEGGER_EXPLORER to create Xenium Explorer compatible files
-    SEGGER_EXPLORER ( ch_segger_transcripts, ch_basedir )
+    SEGGER_EXPLORER ( ch_explorer_input )
     ch_versions = ch_versions.mix ( SEGGER_EXPLORER.out.versions )
 
     emit:
@@ -134,6 +144,40 @@ workflow SEGGER_CREATE_TRAIN_PREDICT {
     benchmarks     = SEGGER_PREDICT.out.benchmarks
     versions       = ch_versions
 }
+
+/*
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    PROSEG SUBWORKFLOW
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+*/
+// Adapted from nf-core/spatialxe
+
+workflow PROSEG_RUN {
+
+    take:
+    ch_bundle_path          // channel: [ val(meta), [ "basedir" ] ]
+    ch_transcripts_parquet  // channel: [ val(meta), [bundle + "/transcripts.parquet"]]
+
+    main:
+    ch_versions = Channel.empty()
+
+    // Run proseg segmentation on transcripts
+    PROSEG(ch_transcripts_parquet)
+    ch_versions = ch_versions.mix(PROSEG.out.versions)
+
+    // Convert proseg output to Baysor-compatible format for import
+    PROSEG2BAYSOR(PROSEG.out.seg_outs)
+    ch_versions = ch_versions.mix(PROSEG2BAYSOR.out.versions)
+
+    // Prepare input for IMPORT_SEGMENTATION
+    // PROSEG2BAYSOR.out.converted emits: tuple val(meta), path(transcript-metadata.csv), path(cell-polygons.geojson)
+    ch_proseg_segmentation = PROSEG2BAYSOR.out.converted
+
+    emit:
+    segmentation = ch_proseg_segmentation  // [ meta, csv, geojson ] - compatible with IMPORT_SEGMENTATION
+    versions     = ch_versions
+}
+
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     MAIN WORKFLOW
@@ -152,15 +196,22 @@ workflow {
         error "The --input parameter is required but was not specified. Please provide a valid input path."
     }
     
-    if (!params.runRanger && !params.runBaysor && !params.runSegger) {
-        error "No method set. Please set either runRanger or runBaysor to true."
+    if (!params.runRanger && !params.runBaysor && !params.runSegger && !params.runProseg) {
+        error "No method set. Please set runRanger, runBaysor, runSegger, or runProseg to true."
     }
-    
+
     // If Ranger is not running but Baysor is, force baysor_from_resegment to false
     def effective_baysor_from_resegment = params.baysor_from_resegment
     if (!params.runRanger && params.runBaysor && params.baysor_from_resegment) {
         log.warn "Warning: baysor_from_resegment is set to true but runRanger is false. Setting baysor_from_resegment to false."
         effective_baysor_from_resegment = false
+    }
+
+    // If Ranger is not running but Proseg is with proseg_from_resegment, force it to false
+    def effective_proseg_from_resegment = params.proseg_from_resegment
+    if (!params.runRanger && params.runProseg && params.proseg_from_resegment) {
+        log.warn "Warning: proseg_from_resegment is set to true but runRanger is false. Setting proseg_from_resegment to false."
+        effective_proseg_from_resegment = false
     }
     
     // Set channels
@@ -204,7 +255,7 @@ workflow {
     }
     
     if ( params.runBaysor ) {
-        if (effective_baysor_from_resegment) {         
+        if (effective_baysor_from_resegment) {
             // Calculate splits for tiling transcript file
             if (!params.preset_splits) {
                 CALC_SPLITS(ch_transcripts_parquet_ranger)
@@ -212,9 +263,14 @@ workflow {
             }
             //Baysor segmentation (using parallel processing workflow)
             BAYSOR_PARALLEL(ch_transcripts_parquet_ranger, ch_splits)
-            
+
+            // Join channels by metadata to ensure correct bundle-segmentation pairing
+            // Output format: [ meta, bundle, csv, geojson ]
+            ch_baysor_import_input = ch_bundle_path_ranger.join(BAYSOR_PARALLEL.out.segmentation, by: 0)
+
             //Importing baysor segmentation into new Xenium bundle
-            IMPORT_SEGMENTATION(ch_bundle_path_ranger, BAYSOR_PARALLEL.out.segmentation)
+            // Pass as single tuple to ensure correct pairing
+            IMPORT_SEGMENTATION(ch_baysor_import_input)
         }
         else {
             // Calculate splits for tiling transcript file
@@ -224,13 +280,45 @@ workflow {
             }
             //Baysor segmentation (using parallel processing workflow)
             BAYSOR_PARALLEL(ch_transcripts_parquet, ch_splits)
-            
+
+            // Join channels by metadata to ensure correct bundle-segmentation pairing
+            // Output format: [ meta, bundle, csv, geojson ]
+            ch_baysor_import_input = ch_bundle_path.join(BAYSOR_PARALLEL.out.segmentation, by: 0)
+
             //Importing baysor segmentation into new Xenium bundle
-            IMPORT_SEGMENTATION(ch_bundle_path, BAYSOR_PARALLEL.out.segmentation)
+            // Pass as single tuple to ensure correct pairing
+            IMPORT_SEGMENTATION(ch_baysor_import_input)
         }
     }
     
     if (params.runSegger ) {
         SEGGER_CREATE_TRAIN_PREDICT (ch_bundle_path, ch_transcripts_parquet)
+    }
+
+    if (params.runProseg) {
+        if (effective_proseg_from_resegment) {
+            // Run proseg on resegmented transcripts
+            PROSEG_RUN(ch_bundle_path_ranger, ch_transcripts_parquet_ranger)
+
+            // Join channels by metadata to ensure correct bundle-segmentation pairing
+            // Output format: [ meta, bundle, csv, geojson ]
+            ch_proseg_import_input = ch_bundle_path_ranger.join(PROSEG_RUN.out.segmentation, by: 0)
+
+            // Import proseg segmentation into new Xenium bundle
+            // Pass as single tuple to ensure correct pairing
+            IMPORT_SEGMENTATION_PROSEG(ch_proseg_import_input)
+        }
+        else {
+            // Run proseg on original transcripts
+            PROSEG_RUN(ch_bundle_path, ch_transcripts_parquet)
+
+            // Join channels by metadata to ensure correct bundle-segmentation pairing
+            // Output format: [ meta, bundle, csv, geojson ]
+            ch_proseg_import_input = ch_bundle_path.join(PROSEG_RUN.out.segmentation, by: 0)
+
+            // Import proseg segmentation into new Xenium bundle
+            // Pass as single tuple to ensure correct pairing
+            IMPORT_SEGMENTATION_PROSEG(ch_proseg_import_input)
+        }
     }
 }

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Detect the maximum token ID from transcripts.parquet in a Xenium bundle.
+Tries feature_name_id first, falls back to counting unique feature_name values.
 Outputs the recommended num_tx_tokens value.
 """
 
@@ -11,13 +12,14 @@ from pathlib import Path
 
 def detect_max_token_id(base_dir):
     """
-    Scan Xenium bundle for maximum feature_name_id value in transcripts.parquet.
+    Scan Xenium bundle for maximum token ID in transcripts.parquet.
+    First tries feature_name_id column, falls back to counting unique feature_name values.
     
     Args:
         base_dir: Path to Xenium bundle directory
         
     Returns:
-        int: Maximum token ID found
+        int: Maximum token ID or count of unique genes
     """
     base_path = Path(base_dir)
     
@@ -32,34 +34,43 @@ def detect_max_token_id(base_dir):
         print(f"Error: Could not find transcripts.parquet in {base_dir}", file=sys.stderr)
         return 312  # Default for standard Xenium
     
-    max_token_id = 0
-    
     try:
         print(f"Reading {transcripts_file}", file=sys.stderr)
         df = pd.read_parquet(transcripts_file)
         
+        print(f"Available columns: {', '.join(df.columns)}", file=sys.stderr)
+        
+        # First try: use feature_name_id if it exists
         if 'feature_name_id' in df.columns:
+            print("  Using feature_name_id column", file=sys.stderr)
             max_token_id = df['feature_name_id'].max()
             unique_tokens = df['feature_name_id'].nunique()
-            print(f"  Found {unique_tokens} unique transcript types", file=sys.stderr)
+            print(f"  Found {unique_tokens} unique token IDs", file=sys.stderr)
             print(f"  Maximum feature_name_id: {max_token_id}", file=sys.stderr)
+            return int(max_token_id)
+        
+        # Fallback: count unique feature_name values
+        elif 'feature_name' in df.columns:
+            print("  feature_name_id not found, using feature_name column", file=sys.stderr)
+            unique_genes = df['feature_name'].nunique()
+            print(f"  Found {unique_genes} unique transcript types", file=sys.stderr)
             
-            # Also report some statistics
-            if 'feature_name' in df.columns:
-                total_transcripts = len(df)
-                unique_genes = df['feature_name'].nunique()
-                print(f"  Total transcripts: {total_transcripts:,}", file=sys.stderr)
-                print(f"  Unique gene names: {unique_genes}", file=sys.stderr)
+            # Report statistics
+            total_transcripts = len(df)
+            print(f"  Total transcripts: {total_transcripts:,}", file=sys.stderr)
+            print(f"  Unique gene names: {unique_genes}", file=sys.stderr)
+            
+            # Return count of unique genes (this is the vocab size needed)
+            return unique_genes
+        
         else:
-            print(f"Error: feature_name_id column not found in {transcripts_file}", file=sys.stderr)
+            print(f"Error: Neither feature_name_id nor feature_name column found", file=sys.stderr)
             print(f"Available columns: {', '.join(df.columns)}", file=sys.stderr)
             return 312
             
     except Exception as e:
         print(f"Error reading {transcripts_file}: {e}", file=sys.stderr)
         return 312
-    
-    return int(max_token_id)
 
 def main():
     parser = argparse.ArgumentParser(description='Detect num_tx_tokens for Segger from Xenium bundle')

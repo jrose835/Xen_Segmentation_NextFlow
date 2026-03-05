@@ -125,12 +125,27 @@ def seg2explorer(
     polygon_vertices: List[List[Any]] = [[], []]
     seg_mask_value: List[int] = []
 
-    grouped_by = seg_df.groupby(cell_id_columns)
+    # Filter out UNASSIGNED transcripts before processing
+    seg_df_filtered = seg_df[seg_df[cell_id_columns] != "UNASSIGNED"]
+    if len(seg_df_filtered) < len(seg_df):
+        n_filtered = len(seg_df) - len(seg_df_filtered)
+        print(f"Filtered out {n_filtered:,} UNASSIGNED transcripts")
+
+    grouped_by = seg_df_filtered.groupby(cell_id_columns)
+
+    # Maximum points per cell to prevent recursion issues with very large cells
+    MAX_POINTS_PER_CELL = 50000
+    skipped_large_cells = 0
 
     for cell_incremental_id, (seg_cell_id, seg_cell) in tqdm(
         enumerate(grouped_by), total=len(grouped_by), desc="Processing cells"
     ):
         if len(seg_cell) < 5:
+            continue
+
+        # Skip cells with too many points to avoid recursion depth issues
+        if len(seg_cell) > MAX_POINTS_PER_CELL:
+            skipped_large_cells += 1
             continue
 
         cell_convex_hull = generate_boundary(seg_cell)
@@ -263,9 +278,11 @@ def seg2explorer(
     )
     
     print(f"✓ Successfully created Xenium Explorer files in {output_dir}")
-    print(f"  - Cells: {cells_filename}.zarr.zip")
+    print(f"  - Cells: {cells_filename}.zarr.zip ({len(cell_id):,} cells)")
     print(f"  - Analysis: {analysis_filename}.zarr.zip")
     print(f"  - Experiment: {xenium_filename}")
+    if skipped_large_cells > 0:
+        print(f"  ⚠ Skipped {skipped_large_cells} cells with >{MAX_POINTS_PER_CELL:,} points")
 
 
 def str_to_uint32(cell_id_str: str) -> Tuple[int, int]:
