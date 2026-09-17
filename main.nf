@@ -30,6 +30,7 @@ include { SEGGER_EXPLORER          } from './modules/segger/explorer/main'
 //Proseg
 include { PROSEG                   } from './modules/proseg/preset/main'
 include { PROSEG2BAYSOR            } from './modules/proseg/proseg2baysor/main'
+include { CLAMP_COORDINATES        } from './modules/proseg/clamp_coordinates/main'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -304,9 +305,11 @@ workflow {
             // Output format: [ meta, bundle, csv, geojson ]
             ch_proseg_import_input = ch_bundle_path_ranger.join(PROSEG_RUN.out.segmentation, by: 0)
 
+            // Clamp negative coordinates (fixes xeniumranger grid index errors)
+            CLAMP_COORDINATES(ch_proseg_import_input)
+
             // Import proseg segmentation into new Xenium bundle
-            // Pass as single tuple to ensure correct pairing
-            IMPORT_SEGMENTATION_PROSEG(ch_proseg_import_input)
+            IMPORT_SEGMENTATION_PROSEG(CLAMP_COORDINATES.out.clamped)
         }
         else {
             // Run proseg on original transcripts
@@ -316,9 +319,11 @@ workflow {
             // Output format: [ meta, bundle, csv, geojson ]
             ch_proseg_import_input = ch_bundle_path.join(PROSEG_RUN.out.segmentation, by: 0)
 
+            // Clamp negative coordinates (fixes xeniumranger grid index errors)
+            CLAMP_COORDINATES(ch_proseg_import_input)
+
             // Import proseg segmentation into new Xenium bundle
-            // Pass as single tuple to ensure correct pairing
-            IMPORT_SEGMENTATION_PROSEG(ch_proseg_import_input)
+            IMPORT_SEGMENTATION_PROSEG(CLAMP_COORDINATES.out.clamped)
         }
     }
 }
