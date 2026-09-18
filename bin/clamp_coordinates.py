@@ -183,8 +183,34 @@ def filter_csv(src_path, dst_path, excluded_ids):
     return removed > 0
 
 
+def link_or_copy(src, dst):
+    """Materialise `src` at `dst` as a real filesystem entry, never a symlink.
+
+    Symlinks are resolved first (Nextflow stages inputs as symlinks to their resolved paths).
+    Files are hard-linked when the filesystem and permissions allow (same device, and
+    fs.protected_hardlinks lets the owner link read-only files), else copied. Directories are
+    recreated with the same rule per file. A symlinked bundle only works inside a container when
+    every link target happens to be bound under the same path; XeniumRanger 4.0 resolves the
+    bundle path and then finds nothing (seen 2026-09-17 on PROTSEQ under apptainer:
+    "Expected output bundle to contain 'transcripts.zarr.zip'"), so links are avoided entirely.
+    """
+    import shutil
+
+    real = os.path.realpath(src)
+    if os.path.isdir(real):
+        os.makedirs(dst, exist_ok=True)
+        for name in os.listdir(real):
+            link_or_copy(os.path.join(real, name), os.path.join(dst, name))
+        return
+    try:
+        os.link(real, dst)
+    except OSError:
+        shutil.copy2(real, dst)
+
+
 def create_fixed_bundle(original_bundle, output_bundle, fix_zarr=False):
-    """Create a bundle directory that symlinks everything from the original.
+    """Create a bundle directory holding every file of the original as a hard link (or copy),
+    never a symlink; see link_or_copy.
 
     If fix_zarr is True, transcripts.zarr.zip is replaced with a patched copy.
     Returns a set of transcript IDs that were removed from the zarr.
@@ -201,7 +227,7 @@ def create_fixed_bundle(original_bundle, output_bundle, fix_zarr=False):
             continue
 
         if not os.path.exists(dst):
-            os.symlink(os.path.abspath(src), dst)
+            link_or_copy(src, dst)
 
     if fix_zarr:
         src_zarr = os.path.join(original_bundle, "transcripts.zarr.zip")
@@ -249,12 +275,12 @@ def main():
     if removed_ids:
         filter_csv(args.csv, out_csv, removed_ids)
     else:
-        # No filtering needed — symlink through
-        os.symlink(os.path.abspath(args.csv), out_csv)
+        # No filtering needed — pass through as a hard link or copy, never a symlink
+        link_or_copy(args.csv, out_csv)
 
     # Pass GeoJSON through unchanged — XeniumRanger handles slightly negative
     # polygon coordinates fine, and clamping to 0 would distort cell shapes
-    os.symlink(os.path.abspath(args.geojson), out_geojson)
+    link_or_copy(args.geojson, out_geojson)
 
     if not needs_zarr_fix:
         print("No negative grid tiles found, all files passed through", file=sys.stderr)
