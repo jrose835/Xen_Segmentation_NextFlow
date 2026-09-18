@@ -249,6 +249,14 @@ def main():
         required=True,
         help="Output directory for fixed files",
     )
+    parser.add_argument(
+        "--drop-experiment-keys",
+        default="",
+        help="comma-separated keys to remove from experiment.xenium in the fixed bundle: fields "
+        "the installed XeniumRanger does not recognise (e.g. segmented_cell_boundary_large_frac "
+        "written by xenium-4.0.2.2 onboard analysis, rejected by XeniumRanger 4.0.1 with "
+        "'unrecognized keys ... for PAFinalizeExperimentXenium')",
+    )
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -270,6 +278,20 @@ def main():
     # Create fixed bundle (symlinks + optional zarr fix)
     # Returns IDs of transcripts removed from zarr
     removed_ids = create_fixed_bundle(args.bundle, out_bundle, fix_zarr=needs_zarr_fix)
+    drop = [k for k in args.drop_experiment_keys.split(",") if k.strip()]
+    if drop:
+        exp = os.path.join(out_bundle, "experiment.xenium")
+        with open(exp) as fh:
+            meta = json.load(fh)
+        present = [k for k in drop if k in meta]
+        for k in present:
+            del meta[k]
+        # the fixed bundle holds a hard link or copy; write a fresh file so the original is untouched
+        tmp = exp + ".tmp"
+        with open(tmp, "w") as fh:
+            json.dump(meta, fh, indent=2)
+        os.replace(tmp, exp)
+        print(f"experiment.xenium: dropped {len(present)} key(s) unknown to the installed XeniumRanger: {present}")
 
     # Filter CSV to remove transcripts that no longer exist in the zarr
     if removed_ids:
